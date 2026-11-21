@@ -31,7 +31,7 @@ Python, FastAPI, Pydantic, SQLAlchemy, Alembic, PostgreSQL; React and TypeScript
 ## Known limitations
 
 - No code, no tests, no CI yet.
-- No license has been chosen yet; until one is added, all rights are reserved by default.
+- Licensed under MIT (see [LICENSE](LICENSE)). Dependency licenses are still to be verified (see docs/dependencies.md).
 
 ## Contributing
 
