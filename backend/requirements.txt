@@ -3,5 +3,5 @@ uvicorn[standard]==0.34.*
 pydantic==2.*
 sqlalchemy==2.0.*
 alembic==1.14.*
-psycopg[binary]==3.2.*
+psycopg[binary]==3.3.*
 argon2-cffi==23.*
