@@ -26,3 +26,9 @@ packages = ["novacloud"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]
+# Reviewed and accepted (see docs/threat-model.md):
+#  B404/B603/B607  runner calls `docker` with argument lists built from validated templates; no shell.
+#  B104            the runner listens on all interfaces inside its container, which sits on an internal-only network.
+#  B108            "/tmp" is a tmpfs mount point inside managed containers, not a host path.
+#  B310            runner URL comes from server configuration, never from user input.
+skips = ["B404", "B603", "B607", "B104", "B108", "B310"]

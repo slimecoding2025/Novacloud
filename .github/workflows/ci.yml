@@ -28,7 +28,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check src tests
       - run: mypy
-      - run: bandit -q -r src
+      - run: bandit -q -c pyproject.toml -r src
       - run: pip-audit -r requirements.txt
       - name: Tests (unit, API and real PostgreSQL schema tests)
         run: pytest -q
