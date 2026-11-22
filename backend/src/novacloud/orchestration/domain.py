@@ -1,9 +1,10 @@
-from __future__ import annotations
 """Jobs (PostgreSQL-backed queue, ADR-0002), idempotency and execution plans with compensation."""
+
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Callable
+from collections.abc import Callable
 
 DESTRUCTIVE = {"instance.delete", "volume.delete"}
 

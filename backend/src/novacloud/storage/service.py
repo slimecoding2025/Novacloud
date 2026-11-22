@@ -1,5 +1,7 @@
-from __future__ import annotations
 """Object storage on the local filesystem. Objects are addressed by generated ID, never by user path."""
+
+from __future__ import annotations
+
 import hashlib
 import os
 import uuid

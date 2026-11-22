@@ -1,6 +1,6 @@
 from fastapi import Depends, Header, Request
 
-from novacloud.core.errors import Forbidden, Unauthorized
+from novacloud.core.errors import Forbidden
 from novacloud.iam.domain import Principal
 from novacloud.iam.sessions import csrf_valid
 

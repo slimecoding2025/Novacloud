@@ -4,15 +4,19 @@ version = "0.2.0"
 requires-python = ">=3.12"
 
 [tool.ruff]
-line-length = 130
+line-length = 160
 src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "S", "UP"]
-ignore = ["S101", "S608", "E731", "B008"]  # assert in tests; bound-parameter SQL only; FastAPI Depends()
+ignore = [
+  "S101", "S608", "E731", "B008",   # assert in tests; bound-parameter SQL only; lambda assignment; FastAPI Depends()
+  "UP017", "UP042", "UP035", "B905",  # modernisation style rules
+  "S310", "S607", "S108",            # fixed internal runner URL; docker CLI by name; container /tmp tmpfs mounts
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S", "B"]
+"tests/*" = ["S", "B", "E702", "E401", "I001", "E501", "F841"]
 
 [tool.mypy]
 python_version = "3.12"

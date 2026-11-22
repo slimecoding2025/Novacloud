@@ -9,7 +9,7 @@ import re
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from novacloud.runner.spec import LABEL, build_run_args, container_name, validate_ref
+from novacloud.runner.spec import build_run_args, container_name, validate_ref
 
 TOKEN = os.environ.get("RUNNER_TOKEN", "")
 PATH_RE = re.compile(r"^/v1/containers(?:/(?P<ref>[^/]+)(?:/(?P<act>start|stop))?)?$")

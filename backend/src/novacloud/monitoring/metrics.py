@@ -1,7 +1,7 @@
 """Prometheus text exposition written by hand. Every metric declares its real source; if a source
 cannot be read the metric is reported as unavailable (nc_metric_available 0), never as zero."""
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 
 @dataclass
@@ -46,7 +46,7 @@ class MetricsRegistry:
             out += [f"# HELP {m.name} {m.help} (source: {m.source})", f"# TYPE {m.name} {m.kind}"]
             items = data.items() if isinstance(data, dict) else [((), data)]
             for lv, v in items:
-                lab = ",".join(f'{k}="{_esc(x)}"' for k, x in zip(m.labels, lv))
+                lab = ",".join(f'{k}="{_esc(x)}"' for k, x in zip(m.labels, lv, strict=False))
                 out.append(f"{m.name}{{{lab}}} {v}" if lab else f"{m.name} {v}")
         out += ["# HELP novacloud_metric_available 1 if the metric source could be read, 0 if unavailable",
                 "# TYPE novacloud_metric_available gauge", *avail]

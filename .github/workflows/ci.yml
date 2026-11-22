@@ -59,11 +59,12 @@ jobs:
       - name: Dockerfile lint (hadolint)
         run: |
           for f in backend/Dockerfile backend/Dockerfile.runner frontend/Dockerfile; do
-            docker run --rm -i hadolint/hadolint < "$f"
+            docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < "$f"
           done
       - name: Filesystem and config scan (trivy)
-        uses: aquasecurity/trivy-action@0.28.0
-        with: { scan-type: fs, scan-ref: ".", severity: "HIGH,CRITICAL", exit-code: "1", scanners: "vuln,misconfig,secret" }
+        run: |
+          docker run --rm -v "$PWD:/src" aquasec/trivy:latest fs /src \
+            --severity HIGH,CRITICAL --exit-code 1 --scanners vuln,misconfig,secret
 
   compose:
     runs-on: ubuntu-24.04

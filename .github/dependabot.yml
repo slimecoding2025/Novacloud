@@ -1,7 +1,38 @@
 version: 2
+# Major-version bumps (React 19, Vite 8, TypeScript 7, Python 3.15, ...) need a deliberate migration, so they are not proposed automatically.
 updates:
-  - { package-ecosystem: github-actions, directory: /, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /backend, schedule: { interval: weekly } }
-  - { package-ecosystem: npm, directory: /frontend, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /backend, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /frontend, schedule: { interval: weekly } }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: pip
+    directory: /backend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker
+    directory: /backend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
