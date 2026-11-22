@@ -75,3 +75,22 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config -q
+
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the full stack
+        run: |
+          cp .env.example .env
+          sed -i "s/^DOCKER_GID=.*/DOCKER_GID=$(stat -c %g /var/run/docker.sock)/" .env
+          docker compose up -d --build
+      - name: End-to-end test (real Docker, PostgreSQL, runner, worker)
+        run: ./scripts/e2e.sh
+      - name: Diagnostics on failure
+        if: failure()
+        run: docker compose ps -a && docker compose logs --tail=80
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans
