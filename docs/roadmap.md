@@ -62,9 +62,9 @@ Files changed, features actually implemented, commands run, test results, known 
 |---|---|---|
 | 1 Backend foundation | Config, logging, `/health`, `/ready`, SQLAlchemy, Alembic, compose, `docs/development.md` | Schema, migrations and HTTP layer tested in CI on PostgreSQL 16 |
 | 2 Identity and audit | Users, organizations, roles, sessions, CSRF, rate limit, hash-chained append-only audit | Unit tests + PostgreSQL tests |
-| 3 Compute | State machine, templates, runner, jobs with idempotency, start/stop/delete with confirmation, reconciliation | State machine, jobs, runner argument builder tested; Docker adapter **not run** |
+| 3 Compute | State machine, templates, runner, jobs with idempotency, start/stop/delete with confirmation, reconciliation | State machine, jobs, runner handler tested; full create/stop/start/delete verified against real Docker in CI (`scripts/e2e.sh`) |
 | 4 Storage and network | Local object store with quotas; networks, subnets, IP allocation with overlap checks (metadata only) | Unit tests |
 | 5 Monitoring and console | `/metrics` with documented sources and explicit unavailability, Grafana provisioning, React console pages | Metrics unit-tested; console type-checked only |
 | 6 CI and hardening | GitHub Actions (lint, types, tests, audits, secret/container scans), Dependabot, SECURITY.md | Pipeline green on `main`; it found and fixed a vulnerable Starlette pin |
 
-Next smallest verifiable step: run `docker compose up --build` on a machine with Docker and exercise the runner and console end to end; fix whatever fails.
+Next smallest verifiable steps: browser-level tests of the console (Playwright), real network attachment for instances, shared rate limiting and read-through network storage for multiple API replicas.

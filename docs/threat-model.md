@@ -76,13 +76,13 @@ Legend: **Tested** = automated test executed during development; **Written** = i
 | Secret/token leakage in logs | Tested | `test_monitoring.py` redaction |
 | Rate limiting, body-size limits, quotas | Tested | limiter, quotas, upload limit (`test_api.py`) |
 | Security headers, CSP | Tested (API) / Written (nginx) | `test_api.py`; `frontend/nginx.conf` not run |
-| Container escape | Written | runner drops all capabilities, read-only FS, no network, no privileged mode, no mounts; **not verified against a real Docker daemon** |
+| Container escape | Tested (configuration) | runner drops all capabilities, read-only FS, no network, no privileged mode, no mounts; CI confirms the flags on a real container with `docker inspect`. Kernel-level escape resistance is not tested |
 | XSS | Written | React escaping; strict CSP; no `dangerouslySetInnerHTML` |
 | SSRF | Mitigated by design | no user-supplied URLs anywhere |
 
 ## Remaining gaps
 
-- The runner has not been exercised against a real Docker daemon; its isolation claims are unproven.
+- The runner is verified only at configuration level on a real daemon; no escape testing or review has been done.
 - Instance containers run with `--network none`: they are isolated but also unreachable. The network module records address plans only and does not configure real networks.
 - Rate limiting is in-process.
 - Registration is open unless `REGISTRATION_ENABLED=false`.

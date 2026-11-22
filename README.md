@@ -29,14 +29,14 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 
 ## Status
 
-> **Pre-alpha.** All six roadmap phases are implemented and the GitHub Actions pipeline is green, but the Docker runner and the full `docker compose` stack have **not been run against a real Docker daemon** yet. No production-readiness or security claims are made; there has been no external review.
+> **Pre-alpha.** All six roadmap phases are implemented. The GitHub Actions pipeline is green and includes an **end-to-end test of the full `docker compose` stack on a real Docker daemon** (sign-up, container create/stop/start/delete, audit verification). No production-readiness or security claims are made; there has been no external review.
 
 | Area | Implemented | Verification |
 |---|---|---|
 | Identity: organizations, users, roles, sessions, CSRF, rate limiting | Yes | Unit-tested |
 | Audit log: hash-chained, append-only (DB triggers + restricted role) | Yes | Unit-tested and tested on real PostgreSQL 16 |
 | Compute: instance state machine, jobs, idempotency, reconciliation | Yes | Unit-tested |
-| Runner (only component touching Docker) and Docker adapter | Yes | Argument builder tested; **not run against a Docker daemon** |
+| Runner (only component touching Docker) and Docker adapter | Yes | Handler unit-tested; end-to-end in CI against real Docker (container created, hardened flags confirmed with `docker inspect`, deleted) |
 | Storage: local object store, quotas, path-traversal protection | Yes | Unit-tested |
 | Network: networks, subnets, IP allocation, overlap checks (metadata only) | Yes | Unit-tested; SQL checked on PostgreSQL |
 | Monitoring: Prometheus metrics with documented sources, Grafana provisioning | Yes | Metrics unit-tested |
@@ -44,7 +44,7 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 | Web console (React/TypeScript): overview dashboard, instances, jobs, objects, networks, audit, members; light/dark theme | Yes | Type-checked and built in CI; not exercised in a browser |
 | CI (GitHub Actions), Dependabot, security policy | Yes | Green: ruff, mypy, bandit, pip-audit, pytest on PostgreSQL 16, Alembic upgrade/downgrade, npm typecheck/build/audit, gitleaks, hadolint, trivy, compose validation |
 
-Test suite in CI: **73 passing** (unit, HTTP and real-PostgreSQL tests).
+Test suite in CI: **78 passing** (unit, HTTP, runner and real-PostgreSQL tests) plus the `scripts/e2e.sh` end-to-end run.
 
 ## Features
 
@@ -100,6 +100,8 @@ Open the console, choose **Create an organization**; the first user is the `owne
 
 > **Hosting:** the full stack needs Docker and PostgreSQL, so it cannot run on Vercel-style static/serverless hosts (a frontend-only deployment shows the sign-in page but cannot sign in). See *Where can it run for free?* in [docs/development.md](docs/development.md).
 
+Run the end-to-end test against a running stack with `./scripts/e2e.sh` (needs `curl`, `jq`, Docker).
+
 Run the tests: `cd backend && pip install -r requirements-dev.txt && pytest` — set `PGHOST`/`PGUSER`/`PGPASSWORD` to include the real-PostgreSQL tests. Full instructions: [docs/development.md](docs/development.md).
 
 ## Security
@@ -108,7 +110,7 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 
 ## Known limitations
 
-- Runner/Docker integration and the console in a browser have not been exercised yet (see Status).
+- The console has been built and type-checked but not exercised in a browser (the e2e test only checks that it is served with a CSP and proxies the API).
 - Instances run with `--network none`; real network attachment is not implemented.
 - Networks are cached per API process: run a single API replica. Rate limiting is also per process.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.
