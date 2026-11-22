@@ -5,5 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/srv/src
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 WORKDIR /srv
 COPY src src
+# Non-root. Access to the Docker socket is granted at run time with `group_add` (see docker-compose.yml).
+RUN useradd --system --uid 10002 runner
+USER runner
 EXPOSE 8100
 CMD ["python", "-m", "novacloud.runner.server"]

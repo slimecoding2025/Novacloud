@@ -52,6 +52,8 @@ services:
     build: { context: ./backend, dockerfile: Dockerfile.runner }
     environment:
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN}
+    user: "10002"
+    group_add: ["${DOCKER_GID:-999}"]   # group owning /var/run/docker.sock on the host: stat -c %g /var/run/docker.sock
     volumes: ["/var/run/docker.sock:/var/run/docker.sock"]   # ONLY the runner gets the socket (ADR-0003)
     networks: [runner]
 

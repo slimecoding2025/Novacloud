@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
 DESTRUCTIVE = {"instance.delete", "volume.delete"}
 

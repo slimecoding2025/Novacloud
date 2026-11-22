@@ -43,6 +43,7 @@ Lint and types: `ruff check src tests`, `mypy`, `bandit -r src`, `pip-audit -r r
 | `NOVACLOUD_SECRET_KEY` | none | HMAC key for CSRF tokens |
 | `COOKIE_SECURE` | `false` | Must be `true` behind HTTPS |
 | `REGISTRATION_ENABLED` | `true` | Set `false` after creating your organization |
+| `DOCKER_GID` | `999` | Host group id of the Docker socket; the runner runs as a non-root user in that group |
 | `SESSION_TTL_SECONDS` | `28800` | Session lifetime |
 | `RUNNER_URL`, `RUNNER_TOKEN` | – | Runner endpoint and shared secret |
 | `METRICS_TOKEN` | empty | `/metrics` returns 404 unless set |

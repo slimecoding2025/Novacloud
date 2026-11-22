@@ -1,7 +1,7 @@
 """Prometheus text exposition written by hand. Every metric declares its real source; if a source
 cannot be read the metric is reported as unavailable (nc_metric_available 0), never as zero."""
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
 
 @dataclass
