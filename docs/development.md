@@ -51,6 +51,20 @@ Lint and types: `ruff check src tests`, `mypy`, `bandit -r src`, `pip-audit -r r
 | `MAX_OBJECT_BYTES`, `ORG_STORAGE_QUOTA_BYTES`, `MAX_INSTANCES_PER_ORG` | 10 MiB, 1 GiB, 20 | Limits and quotas |
 | `LOGIN_RATE_PER_MINUTE`, `API_RATE_PER_MINUTE` | 10, 300 | In-process rate limits |
 
+## Where can it run for free?
+
+NOVACLOUD needs a **Docker daemon** (the runner starts containers), **PostgreSQL** and a **long-running worker**. That rules out serverless/static hosts:
+
+| Option | Fits? | Notes |
+|---|---|---|
+| **Your own machine** (`docker compose up`) | Yes, recommended | Free, everything works, nothing leaves your computer. A free Cloudflare Tunnel can expose it temporarily. |
+| Oracle Cloud Always Free VM | Yes | Real server for the full stack, but sign-up requires a payment card (verification), which conflicts with the project's no-card rule. |
+| Vercel / Netlify / Cloudflare Pages | Frontend only | They can serve the React build, but there is no API behind it, so sign-in cannot work. |
+| Render, Koyeb free tiers | API + frontend only | No Docker socket, so instances cannot be created; free databases/services sleep or expire. |
+
+Free-tier terms change often; check each provider's current documentation before relying on them.
+Never deploy publicly with `REGISTRATION_ENABLED=true`, default passwords or without HTTPS (`COOKIE_SECURE=true`).
+
 ## Database
 
 Schema: `backend/migrations/sql/0001_initial.sql`, applied by Alembic (`alembic upgrade head`).

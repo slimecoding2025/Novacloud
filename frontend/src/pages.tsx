@@ -1,6 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, ReactNode, useState } from "react";
 import { api, newKey } from "./api";
-import { Instance, Job, Member, Network, Obj, AuditRow, Me } from "./types";
+import { AuditRow, Instance, Job, Me, Member, Network, Obj } from "./types";
 import { Badge, Section, State, useLoad } from "./ui";
 
 const can = (me: Me, ...roles: Me["role"][]) => roles.includes(me.role);
@@ -98,4 +98,32 @@ export function Members({ me }: { me: Me }) {
     <State loading={loading} error={error} empty={data?.length === 0} />
     <table><tbody>{data?.map(m => <tr key={m.user_id}><td>{m.email}</td><td><Badge v={m.role} /></td></tr>)}</tbody></table>
   </Section>);
+}
+
+function Stat({ label, value, sub, loading, error, children }: { label: string; value?: string | number; sub?: string; loading: boolean; error: string | null; children?: ReactNode }) {
+  return (<div className="stat"><div className="label">{label}</div>
+    {loading ? <div className="value muted">…</div> : error ? <div className="value muted" title={error}>n/a</div> : <div className="value">{value}</div>}
+    <div className="sub">{error ? `Unavailable: ${error}` : sub}</div>{children}</div>);
+}
+
+// Every figure comes from a live API call; if a call fails the card says "n/a", never a made-up number.
+export function Overview() {
+  const inst = useLoad(() => api<Instance[]>("GET", "/api/v1/instances"));
+  const jobs = useLoad(() => api<Job[]>("GET", "/api/v1/jobs"));
+  const usage = useLoad(() => api<{ used_bytes: number; quota_bytes: number }>("GET", "/api/v1/objects/usage"));
+  const chain = useLoad(() => api<{ entries: number; valid: boolean }>("GET", "/api/v1/audit/verify"));
+  const running = inst.data?.filter(i => i.state === "running").length ?? 0;
+  const failedI = inst.data?.filter(i => i.state === "failed").length ?? 0;
+  const pending = jobs.data?.filter(j => j.status === "queued" || j.status === "running").length ?? 0;
+  const failedJ = jobs.data?.filter(j => j.status === "failed").length ?? 0;
+  const pct = usage.data ? Math.min(100, (usage.data.used_bytes / usage.data.quota_bytes) * 100) : 0;
+  return (<>
+    <div className="stats">
+      <Stat label="Instances" value={inst.data?.length} sub={`${running} running · ${failedI} failed`} loading={inst.loading} error={inst.error} />
+      <Stat label="Jobs" value={pending} sub={`pending · ${failedJ} failed (recent)`} loading={jobs.loading} error={jobs.error} />
+      <Stat label="Storage" value={usage.data ? `${pct.toFixed(1)}%` : undefined} sub={usage.data ? `${usage.data.used_bytes} of ${usage.data.quota_bytes} bytes` : ""} loading={usage.loading} error={usage.error}>
+        <div className="bar"><i style={{ width: `${pct}%` }} /></div></Stat>
+      <Stat label="Audit chain" value={chain.data ? (chain.data.valid ? "Valid" : "BROKEN") : undefined} sub={chain.data ? `${chain.data.entries} entries verified` : ""} loading={chain.loading} error={chain.error} />
+    </div>
+  </>);
 }

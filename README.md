@@ -41,7 +41,7 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 | Network: networks, subnets, IP allocation, overlap checks (metadata only) | Yes | Unit-tested; SQL checked on PostgreSQL |
 | Monitoring: Prometheus metrics with documented sources, Grafana provisioning | Yes | Metrics unit-tested |
 | HTTP API (FastAPI) | Yes | 8 HTTP-level tests pass in CI (auth, CSRF, IDOR, limits, metrics, error hygiene) |
-| Web console (React/TypeScript) | Yes | Type-checked and built in CI; not exercised in a browser |
+| Web console (React/TypeScript): overview dashboard, instances, jobs, objects, networks, audit, members; light/dark theme | Yes | Type-checked and built in CI; not exercised in a browser |
 | CI (GitHub Actions), Dependabot, security policy | Yes | Green: ruff, mypy, bandit, pip-audit, pytest on PostgreSQL 16, Alembic upgrade/downgrade, npm typecheck/build/audit, gitleaks, hadolint, trivy, compose validation |
 
 Test suite in CI: **73 passing** (unit, HTTP and real-PostgreSQL tests).
@@ -97,6 +97,8 @@ docker compose up --build
 | Grafana | http://localhost:3001 |
 
 Open the console, choose **Create an organization**; the first user is the `owner`. Set `REGISTRATION_ENABLED=false` afterwards.
+
+> **Hosting:** the full stack needs Docker and PostgreSQL, so it cannot run on Vercel-style static/serverless hosts (a frontend-only deployment shows the sign-in page but cannot sign in). See *Where can it run for free?* in [docs/development.md](docs/development.md).
 
 Run the tests: `cd backend && pip install -r requirements-dev.txt && pytest` — set `PGHOST`/`PGUSER`/`PGPASSWORD` to include the real-PostgreSQL tests. Full instructions: [docs/development.md](docs/development.md).
 
