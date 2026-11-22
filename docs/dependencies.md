@@ -1,6 +1,6 @@
 # Zero-budget dependency plan
 
-Status: plan. Versions are not pinned yet; they will be pinned and recorded when the backend is bootstrapped. Licenses below must be re-checked at adoption time, they are not verified here.
+Status: adopted. Python dependencies are pinned to minor series in `backend/requirements.txt` (no lock file yet; Dependabot proposes updates). Licenses below must still be re-checked, they are not verified here. `pip-audit`/`npm audit` run in CI.
 
 ## Rule
 

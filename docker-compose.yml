@@ -1,21 +1,89 @@
+# Local stack. Required variables come from .env (see .env.example); compose fails fast if one is missing.
+x-api-env: &api-env
+  DATABASE_URL: postgresql+psycopg://novacloud:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/novacloud
+  NOVACLOUD_SECRET_KEY: ${NOVACLOUD_SECRET_KEY:?set NOVACLOUD_SECRET_KEY}
+  NOVACLOUD_ENV: ${NOVACLOUD_ENV:-development}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+  RUNNER_URL: http://runner:8100
+  RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN}
+  METRICS_TOKEN: ${METRICS_TOKEN:?set METRICS_TOKEN}
+  STORAGE_ROOT: /data/objects
+
 services:
   db:
     image: postgres:16
-    environment: { POSTGRES_USER: novacloud, POSTGRES_PASSWORD: novacloud, POSTGRES_DB: novacloud }
-    volumes: [pgdata:/var/lib/postgresql/data]
-    healthcheck: { test: ["CMD-SHELL", "pg_isready -U novacloud"], interval: 5s, retries: 10 }
-  backend:
-    build: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg://novacloud:novacloud@db:5432/novacloud
+      POSTGRES_USER: novacloud
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: novacloud
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U novacloud"], interval: 5s, retries: 10 }
+
+  migrate:
+    build: ./backend
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-env
     depends_on: { db: { condition: service_healthy } }
-    ports: ["8000:8000"]
+    networks: [backend]
+    restart: "no"
+
+  api:
+    build: ./backend
+    environment: *api-env
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    volumes: [objects:/data/objects]
+    ports: ["127.0.0.1:8000:8000"]
+    networks: [backend, runner]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/ready')"]
+      interval: 10s
+      retries: 5
+
+  worker:
+    build: ./backend
+    command: ["python", "-m", "novacloud.worker"]
+    environment: *api-env
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    networks: [backend, runner]
+
+  runner:
+    build: { context: ./backend, dockerfile: Dockerfile.runner }
+    environment:
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN}
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]   # ONLY the runner gets the socket (ADR-0003)
+    networks: [runner]
+
+  frontend:
+    build: ./frontend
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on: [api]
+    networks: [backend]
+
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v2.55.1
+    environment: { METRICS_TOKEN: "${METRICS_TOKEN}" }
+    entrypoint: ["/bin/sh", "-c", "printf '%s' \"$$METRICS_TOKEN\" > /tmp/metrics_token && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml"]
     volumes: ["./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
-    ports: ["9090:9090"]
+    ports: ["127.0.0.1:9090:9090"]
+    networks: [backend]
+
   grafana:
-    image: grafana/grafana-oss
-    ports: ["3001:3000"]
+    image: grafana/grafana-oss:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["127.0.0.1:3001:3000"]
+    networks: [backend]
+
+networks:
+  backend: {}
+  runner: { internal: true }   # runner is reachable only from api/worker and has no outbound network
+
 volumes:
   pgdata:
+  objects:

@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: proposed. Each phase ends with a verified, documented vertical slice.
+Status: phases 1-6 implemented in code; see the *Verification* notes. Phases are only "done" where tests were actually run.
 
 ## Phase 0: design (this repository state)
 
@@ -55,3 +55,16 @@ GitHub Actions with pinned actions, linting, type checks, dependency, secret and
 ## Reporting at each milestone
 
 Files changed, features actually implemented, commands run, test results, known limitations, security findings, resource requirements, next smallest verifiable step.
+
+## Implementation status
+
+| Phase | Implemented | Verified here |
+|---|---|---|
+| 1 Backend foundation | Config, logging, `/health`, `/ready`, SQLAlchemy, Alembic, compose, `docs/development.md` | Schema applied and tested on PostgreSQL 16; HTTP layer **not run** (FastAPI unavailable in the build environment) |
+| 2 Identity and audit | Users, organizations, roles, sessions, CSRF, rate limit, hash-chained append-only audit | Unit tests + PostgreSQL tests |
+| 3 Compute | State machine, templates, runner, jobs with idempotency, start/stop/delete with confirmation, reconciliation | State machine, jobs, runner argument builder tested; Docker adapter **not run** |
+| 4 Storage and network | Local object store with quotas; networks, subnets, IP allocation with overlap checks (metadata only) | Unit tests |
+| 5 Monitoring and console | `/metrics` with documented sources and explicit unavailability, Grafana provisioning, React console pages | Metrics unit-tested; console type-checked only |
+| 6 CI and hardening | GitHub Actions (lint, types, tests, audits, secret/container scans), Dependabot, SECURITY.md | Workflow **not yet executed** on GitHub |
+
+Next smallest verifiable step: run `docker compose up --build` on a machine with Docker, then the API tests (`pytest`) with FastAPI installed, and fix whatever fails.

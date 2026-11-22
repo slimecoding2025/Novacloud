@@ -1,6 +1,6 @@
 # Threat model (initial)
 
-Status: initial, written before implementation. Controls listed here are **requirements**, not implemented features.
+Status: updated for milestones 1-6. The *Implementation status* column below says what exists in code and how it was verified. No external review has taken place.
 
 ## Assets
 
@@ -57,3 +57,34 @@ The runner holds the power to create and destroy containers. Anyone who compromi
 - No code exists to test these controls yet.
 - Network isolation will not be claimed unless the underlying Docker network setup enforces it and tests show it.
 - This model has had no external review.
+
+## Implementation status
+
+Legend: **Tested** = automated test executed during development; **Written** = implemented but only reviewed by reading/static checks, not executed (needs Docker, FastAPI or a browser).
+
+| Control | Status | Evidence |
+|---|---|---|
+| Tenant-scoped access, default deny, authorization in service layer | Tested | `test_iam.py`, `test_compute.py`, `test_storage.py`, `test_network.py` (cross-tenant cases) |
+| Privilege escalation prevention, audited denials | Tested | `test_no_privilege_escalation` |
+| SQL injection (bound parameters only) | Written | `infra/sql.py` uses SQLAlchemy `text()` with parameters; allow-listed values elsewhere |
+| CSRF (SameSite=Strict + HMAC token) | Tested (token) / Written (HTTP) | `test_csrf_token_binding`, `test_api.py` |
+| Session rotation, expiry, revocation | Tested | `test_iam.py` |
+| Path traversal | Tested | `test_storage.py` |
+| Command injection / privileged containers | Tested | `test_runner_spec.py` (no shell, template-only, hardened flags) |
+| Race conditions, duplicate create | Tested on real PostgreSQL | `test_postgres_schema.py` (idempotency uniqueness, SKIP LOCKED) |
+| Audit tampering | Tested on real PostgreSQL | triggers + role without UPDATE/DELETE |
+| Secret/token leakage in logs | Tested | `test_monitoring.py` redaction |
+| Rate limiting, body-size limits, quotas | Tested (limiter, quotas) / Written (middleware) | |
+| Security headers, CSP | Written | `api/app.py`, `frontend/nginx.conf` |
+| Container escape | Written | runner drops all capabilities, read-only FS, no network, no privileged mode, no mounts; **not verified against a real Docker daemon** |
+| XSS | Written | React escaping; strict CSP; no `dangerouslySetInnerHTML` |
+| SSRF | Mitigated by design | no user-supplied URLs anywhere |
+
+## Remaining gaps
+
+- The runner has not been exercised against a real Docker daemon; its isolation claims are unproven.
+- Instance containers run with `--network none`: they are isolated but also unreachable. The network module records address plans only and does not configure real networks.
+- Rate limiting is in-process.
+- Registration is open unless `REGISTRATION_ENABLED=false`.
+- No TLS termination is provided; run behind a reverse proxy and set `COOKIE_SECURE=true`.
+- Audit anchoring outside the database is not implemented.

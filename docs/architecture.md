@@ -1,6 +1,6 @@
 # Architecture (proposal)
 
-Status: proposed, not implemented. Decisions are recorded in [adr/](adr/).
+Status: implemented as described, with the deviations listed under *Implementation notes*. Decisions are recorded in [adr/](adr/).
 
 ## Goals and priorities
 
@@ -99,3 +99,11 @@ Structured JSON logs, `/health` (liveness) and `/ready` (dependency status check
 - Runner isolation mechanism (rootless Docker, Podman, socket proxy).
 - Object storage backend beyond the local filesystem; licensing must be checked before choosing.
 - Multi-organization user model details.
+
+## Implementation notes
+
+- Repositories are Protocols with an in-memory implementation (tests) and a PostgreSQL implementation (`infra/sql.py`).
+- Networks are cached in the API process and written through to PostgreSQL; run a single API replica.
+- The runner is a stdlib HTTP server driving the Docker CLI with argument lists (never a shell); it is the only service that mounts the Docker socket and sits on an internal compose network.
+- Instances are launched with `--network none`; real network attachment is not implemented.
+- Compute and job handling run in a separate `worker` process; the API only enqueues jobs.

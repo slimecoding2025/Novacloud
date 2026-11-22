@@ -24,3 +24,10 @@ dist/
 *.log
 data/
 .DS_Store
+
+# Frontend / tooling
+frontend/dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+data/
