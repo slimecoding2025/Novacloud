@@ -46,7 +46,8 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run build
-      - run: npm audit --audit-level=high
+      # Dev-only advisories (esbuild/vite dev server) are not shipped; fail on vulnerabilities in runtime dependencies.
+      - run: npm audit --omit=dev --audit-level=high
 
   security:
     runs-on: ubuntu-24.04
