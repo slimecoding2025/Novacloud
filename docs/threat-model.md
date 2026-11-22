@@ -67,15 +67,15 @@ Legend: **Tested** = automated test executed during development; **Written** = i
 | Tenant-scoped access, default deny, authorization in service layer | Tested | `test_iam.py`, `test_compute.py`, `test_storage.py`, `test_network.py` (cross-tenant cases) |
 | Privilege escalation prevention, audited denials | Tested | `test_no_privilege_escalation` |
 | SQL injection (bound parameters only) | Written | `infra/sql.py` uses SQLAlchemy `text()` with parameters; allow-listed values elsewhere |
-| CSRF (SameSite=Strict + HMAC token) | Tested (token) / Written (HTTP) | `test_csrf_token_binding`, `test_api.py` |
+| CSRF (SameSite=Strict + HMAC token) | Tested | `test_csrf_token_binding`, `test_api.py` (run in CI) |
 | Session rotation, expiry, revocation | Tested | `test_iam.py` |
 | Path traversal | Tested | `test_storage.py` |
 | Command injection / privileged containers | Tested | `test_runner_spec.py` (no shell, template-only, hardened flags) |
 | Race conditions, duplicate create | Tested on real PostgreSQL | `test_postgres_schema.py` (idempotency uniqueness, SKIP LOCKED) |
 | Audit tampering | Tested on real PostgreSQL | triggers + role without UPDATE/DELETE |
 | Secret/token leakage in logs | Tested | `test_monitoring.py` redaction |
-| Rate limiting, body-size limits, quotas | Tested (limiter, quotas) / Written (middleware) | |
-| Security headers, CSP | Written | `api/app.py`, `frontend/nginx.conf` |
+| Rate limiting, body-size limits, quotas | Tested | limiter, quotas, upload limit (`test_api.py`) |
+| Security headers, CSP | Tested (API) / Written (nginx) | `test_api.py`; `frontend/nginx.conf` not run |
 | Container escape | Written | runner drops all capabilities, read-only FS, no network, no privileged mode, no mounts; **not verified against a real Docker daemon** |
 | XSS | Written | React escaping; strict CSP; no `dangerouslySetInnerHTML` |
 | SSRF | Mitigated by design | no user-supplied URLs anywhere |

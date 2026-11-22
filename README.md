@@ -29,7 +29,7 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 
 ## Status
 
-> **Pre-alpha.** All six roadmap phases are implemented in code, but several parts have **not been executed end-to-end** yet (marked below). No production-readiness or security claims are made; there has been no external review.
+> **Pre-alpha.** All six roadmap phases are implemented and the GitHub Actions pipeline is green, but the Docker runner and the full `docker compose` stack have **not been run against a real Docker daemon** yet. No production-readiness or security claims are made; there has been no external review.
 
 | Area | Implemented | Verification |
 |---|---|---|
@@ -40,11 +40,11 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 | Storage: local object store, quotas, path-traversal protection | Yes | Unit-tested |
 | Network: networks, subnets, IP allocation, overlap checks (metadata only) | Yes | Unit-tested; SQL checked on PostgreSQL |
 | Monitoring: Prometheus metrics with documented sources, Grafana provisioning | Yes | Metrics unit-tested |
-| HTTP API (FastAPI) | Yes | Tests written; **not run** (FastAPI unavailable in the build environment) |
-| Web console (React/TypeScript) | Yes | Type-checked only |
-| CI (GitHub Actions), Dependabot, security policy | Yes | **Workflow not yet executed** |
+| HTTP API (FastAPI) | Yes | 8 HTTP-level tests pass in CI (auth, CSRF, IDOR, limits, metrics, error hygiene) |
+| Web console (React/TypeScript) | Yes | Type-checked and built in CI; not exercised in a browser |
+| CI (GitHub Actions), Dependabot, security policy | Yes | Green: ruff, mypy, bandit, pip-audit, pytest on PostgreSQL 16, Alembic upgrade/downgrade, npm typecheck/build/audit, gitleaks, hadolint, trivy, compose validation |
 
-Test suite at this commit: **65 passing, 1 skipped** (the skipped one is the FastAPI HTTP suite).
+Test suite in CI: **73 passing** (unit, HTTP and real-PostgreSQL tests).
 
 ## Features
 
@@ -106,11 +106,11 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 
 ## Known limitations
 
-- Runner/Docker integration, the HTTP layer, the console at runtime, and CI have not been executed yet (see Status).
+- Runner/Docker integration and the console in a browser have not been exercised yet (see Status).
 - Instances run with `--network none`; real network attachment is not implemented.
 - Networks are cached per API process: run a single API replica. Rate limiting is also per process.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.
-- GitHub Actions are referenced by version tag, not commit SHA; Dependabot is configured to update them.
+- GitHub Actions are referenced by version tag, not commit SHA; Dependabot (minor/patch updates only) keeps them current. `npm audit` ignores dev-only advisories (Vite/esbuild dev server).
 - Dependency licenses still need a formal review ([docs/dependencies.md](docs/dependencies.md)). Grafana is AGPL-licensed.
 
 ## Documentation
