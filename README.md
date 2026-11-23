@@ -38,13 +38,13 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 | Compute: instance state machine, jobs, idempotency, reconciliation | Yes | Unit-tested |
 | Runner (only component touching Docker) and Docker adapter | Yes | Handler unit-tested; end-to-end in CI against real Docker (container created, hardened flags confirmed with `docker inspect`, deleted) |
 | Storage: local object store, quotas, path-traversal protection | Yes | Unit-tested |
-| Network: networks, subnets, IP allocation, overlap checks (metadata only) | Yes | Unit-tested; SQL checked on PostgreSQL |
+| Network: networks, subnets (each a real internal Docker bridge), IP allocation, overlap checks, instance attachment | Yes | Unit-tested; SQL checked on PostgreSQL; isolation verified in CI (see below) |
 | Monitoring: Prometheus metrics with documented sources, Grafana provisioning | Yes | Metrics unit-tested |
 | HTTP API (FastAPI) | Yes | 8 HTTP-level tests pass in CI (auth, CSRF, IDOR, limits, metrics, error hygiene) |
 | Web console (React/TypeScript): overview dashboard, instances, jobs, objects, networks, audit, members; light/dark theme | Yes | Type-checked and built in CI; not exercised in a browser |
 | CI (GitHub Actions), Dependabot, security policy | Yes | Green: ruff, mypy, bandit, pip-audit, pytest on PostgreSQL 16, Alembic upgrade/downgrade, npm typecheck/build/audit, gitleaks, hadolint, trivy, compose validation |
 
-Test suite in CI: **78 passing** (unit, HTTP, runner and real-PostgreSQL tests) plus the `scripts/e2e.sh` end-to-end run.
+Test suite in CI: unit, HTTP, runner and real-PostgreSQL tests plus the `scripts/e2e.sh` end-to-end run (containers, hardening flags, same-subnet connectivity, cross-subnet isolation).
 
 ## Features
 
@@ -52,7 +52,7 @@ Test suite in CI: **78 passing** (unit, HTTP, runner and real-PostgreSQL tests) 
 - **Instances** are containers launched from allow-listed templates only; lifecycle `planned → provisioning → running → stopping → stopped → deleting → deleted` (plus `failed`). `running` is set only after the provider confirms it; a reconciliation loop detects drift. Deletion requires typing the instance name.
 - **Jobs** in PostgreSQL (`FOR UPDATE SKIP LOCKED`), idempotency keys per organization, no automatic retry for destructive operations, execution plans with compensation.
 - **Object storage** addressed by generated IDs, size limits, per-organization quota.
-- **Network metadata:** private IPv4 CIDRs, subnet containment, overlap detection, IP allocation (does not configure real networks).
+- **Networking:** private IPv4 CIDRs, subnet containment, overlap detection and IP allocation. Every subnet becomes an **internal Docker bridge**; an instance can be attached to a subnet with an allocated address. Instances in the same subnet reach each other; other subnets and the internet are unreachable (CI proves this with real containers). Instances without a subnet run with no network at all.
 - **Observability:** JSON logs with secret redaction, correlation IDs, `/health`, `/ready` (real database check), `/metrics`.
 
 ## Architecture
@@ -111,7 +111,7 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 ## Known limitations
 
 - The console has been built and type-checked but not exercised in a browser (the e2e test only checks that it is served with a CSP and proxies the API).
-- Instances run with `--network none`; real network attachment is not implemented.
+- Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Subnets are internal-only: no outbound internet, no published ports.
 - Networks are cached per API process: run a single API replica. Rate limiting is also per process.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.
 - GitHub Actions are referenced by version tag, not commit SHA; Dependabot (minor/patch updates only) keeps them current. `npm audit` ignores dev-only advisories (Vite/esbuild dev server).

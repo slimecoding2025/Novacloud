@@ -7,9 +7,15 @@ const can = (me: Me, ...roles: Me["role"][]) => roles.includes(me.role);
 
 export function Instances({ me }: { me: Me }) {
   const { data, error, loading, reload } = useLoad(() => api<Instance[]>("GET", "/api/v1/instances"));
-  const [name, setName] = useState(""); const [tpl, setTpl] = useState("alpine-small"); const [msg, setMsg] = useState("");
+  const nets = useLoad(() => api<Network[]>("GET", "/api/v1/networks"));
+  const [name, setName] = useState(""); const [tpl, setTpl] = useState("alpine-small"); const [subnet, setSubnet] = useState(""); const [msg, setMsg] = useState("");
+  const options = (nets.data ?? []).flatMap(n => n.subnets.map(s => ({ value: `${n.id}|${s.id}`, label: `${n.name} / ${s.name} (${s.cidr})` })));
   const act = async (f: () => Promise<unknown>) => { try { await f(); setMsg(""); setTimeout(reload, 1500); } catch (e) { setMsg((e as Error).message); } };
-  const create = (e: FormEvent) => { e.preventDefault(); act(() => api("POST", "/api/v1/instances", { name, template: tpl }, { "Idempotency-Key": newKey() })); };
+  const create = (e: FormEvent) => {
+    e.preventDefault();
+    const [network_id, subnet_id] = subnet ? subnet.split("|") : [undefined, undefined];
+    act(() => api("POST", "/api/v1/instances", { name, template: tpl, network_id, subnet_id }, { "Idempotency-Key": newKey() }));
+  };
   return (
     <Section title="Instances (containers)" actions={<button onClick={reload}>Refresh</button>}>
       {can(me, "owner", "admin", "member") && (
@@ -17,12 +23,14 @@ export function Instances({ me }: { me: Me }) {
           <input aria-label="name" placeholder="name (a-z, 0-9, -)" value={name} onChange={e => setName(e.target.value)} required />
           <select aria-label="template" value={tpl} onChange={e => setTpl(e.target.value)}>
             <option>alpine-small</option><option>nginx-small</option></select>
+          <select aria-label="subnet" value={subnet} onChange={e => setSubnet(e.target.value)}>
+            <option value="">No network (isolated)</option>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
           <button>Create</button>
         </form>)}
       {msg && <p className="error" role="alert">{msg}</p>}
       <State loading={loading} error={error} empty={data?.length === 0} />
       <table><tbody>{data?.map(i => (
-        <tr key={i.id}><td>{i.name}</td><td>{i.template}</td><td><Badge v={i.state} />{i.error && <small className="error"> {i.error}</small>}</td>
+        <tr key={i.id}><td>{i.name}</td><td>{i.template}</td><td>{i.ip ? <code>{i.ip}</code> : <span className="muted">no network</span>}</td><td><Badge v={i.state} />{i.error && <small className="error"> {i.error}</small>}</td>
           <td>
             {i.state === "stopped" && <button onClick={() => act(() => api("POST", `/api/v1/instances/${i.id}/start`, undefined, { "Idempotency-Key": newKey() }))}>Start</button>}
             {i.state === "running" && <button onClick={() => act(() => api("POST", `/api/v1/instances/${i.id}/stop`, undefined, { "Idempotency-Key": newKey() }))}>Stop</button>}
@@ -61,16 +69,26 @@ export function Objects({ me }: { me: Me }) {
 export function Networks({ me }: { me: Me }) {
   const { data, error, loading, reload } = useLoad(() => api<Network[]>("GET", "/api/v1/networks"));
   const [name, setName] = useState(""); const [cidr, setCidr] = useState("10.0.0.0/16"); const [msg, setMsg] = useState("");
+  const [sub, setSub] = useState({ network: "", name: "", cidr: "10.0.1.0/24" });
   const create = async (e: FormEvent) => { e.preventDefault(); try { await api("POST", "/api/v1/networks", { name, cidr }); setMsg(""); reload(); } catch (x) { setMsg((x as Error).message); } };
-  return (<Section title="Networks (metadata only)">
-    <p className="muted">Records and validates address plans. It does not configure real network isolation.</p>
+  const createSub = async (e: FormEvent) => { e.preventDefault(); try { await api("POST", `/api/v1/networks/${sub.network}/subnets`, { name: sub.name, cidr: sub.cidr }); setMsg(""); reload(); } catch (x) { setMsg((x as Error).message); } };
+  const del = async (path: string) => { try { await api("DELETE", path); setMsg(""); reload(); } catch (x) { setMsg((x as Error).message); } };
+  return (<Section title="Networks">
+    <p className="muted">Each subnet is a real Docker bridge (internal): instances in the same subnet reach each other; other subnets and the internet are not reachable. CIDRs must be unique on the host.</p>
     {can(me, "owner", "admin", "member") && <form onSubmit={create} className="row">
       <input aria-label="network name" placeholder="name" value={name} onChange={e => setName(e.target.value)} required />
       <input aria-label="cidr" value={cidr} onChange={e => setCidr(e.target.value)} required /><button>Create</button></form>}
+    {can(me, "owner", "admin", "member") && (data?.length ?? 0) > 0 && <form onSubmit={createSub} className="row">
+      <select aria-label="parent network" value={sub.network} onChange={e => setSub({ ...sub, network: e.target.value })} required>
+        <option value="">Parent network…</option>{data?.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}</select>
+      <input aria-label="subnet name" placeholder="subnet name" value={sub.name} onChange={e => setSub({ ...sub, name: e.target.value })} required />
+      <input aria-label="subnet cidr" value={sub.cidr} onChange={e => setSub({ ...sub, cidr: e.target.value })} required /><button>Add subnet</button></form>}
     {msg && <p className="error" role="alert">{msg}</p>}
     <State loading={loading} error={error} empty={data?.length === 0} />
-    {data?.map(n => <div key={n.id}><h3>{n.name} <code>{n.cidr}</code></h3>
-      <ul>{n.subnets.map(s => <li key={s.id}>{s.name} <code>{s.cidr}</code> gw {s.gateway} · {s.allocated} allocated</li>)}</ul></div>)}
+    {data?.map(n => <div key={n.id}><h3>{n.name} <code>{n.cidr}</code>
+      {can(me, "owner", "admin") && <button className="danger" onClick={() => del(`/api/v1/networks/${n.id}`)}>Delete</button>}</h3>
+      <ul>{n.subnets.map(s => <li key={s.id}>{s.name} <code>{s.cidr}</code> gw {s.gateway} · {s.allocated} allocated
+        {can(me, "owner", "admin") && <button className="danger" onClick={() => del(`/api/v1/networks/${n.id}/subnets/${s.id}`)}>Delete</button>}</li>)}</ul></div>)}
   </Section>);
 }
 

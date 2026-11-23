@@ -43,7 +43,8 @@ def _provider(s: Settings):
 def _assemble(s, audit_repo, iam_repo, inst_repo, job_repo, obj_repo, provider, ping, hasher, net_store=None) -> Container:
     audit = AuditService(audit_repo)
     iam = IamService(iam_repo, hasher, audit, s.session_ttl_seconds, RateLimiter(s.login_rate_per_minute))
-    compute = ComputeService(inst_repo, job_repo, provider, iam, audit, s.max_instances_per_org)
+    network = NetworkService(iam, audit, store=net_store, provider=provider)
+    compute = ComputeService(inst_repo, job_repo, provider, iam, audit, s.max_instances_per_org, network=network)
     storage = LocalObjectStore(s.storage_root, obj_repo, iam, audit, s.max_object_bytes, s.org_storage_quota_bytes)
     m = MetricsRegistry()
     m.register(Metric("novacloud_build_info", "Always 1; version label", "static config", "gauge",
@@ -53,7 +54,7 @@ def _assemble(s, audit_repo, iam_repo, inst_repo, job_repo, obj_repo, provider, 
     m.register(Metric("novacloud_database_up", "1 if a SELECT 1 succeeds", "live database ping", "gauge",
                       lambda: (ping(), 1)[1]))
     m.counter_metric("novacloud_http_requests_total", "HTTP requests", "API middleware counter", ("method", "status"))
-    return Container(s, audit, iam, compute, job_repo, storage, NetworkService(iam, audit, store=net_store), m,
+    return Container(s, audit, iam, compute, job_repo, storage, network, m,
                      RateLimiter(s.api_rate_per_minute), ping)
 
 

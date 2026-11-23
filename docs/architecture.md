@@ -105,5 +105,5 @@ Structured JSON logs, `/health` (liveness) and `/ready` (dependency status check
 - Repositories are Protocols with an in-memory implementation (tests) and a PostgreSQL implementation (`infra/sql.py`).
 - Networks are cached in the API process and written through to PostgreSQL; run a single API replica.
 - The runner is a stdlib HTTP server driving the Docker CLI with argument lists (never a shell); it is the only service that mounts the Docker socket and sits on an internal compose network.
-- Instances are launched with `--network none`; real network attachment is not implemented.
+- Each subnet maps to an internal Docker bridge `novacloud-net-<subnet id>` created by the runner; instances are attached with a fixed address from the allocator. Instances without a subnet use `--network none`. The runner only touches networks labelled `novacloud.managed=true`.
 - Compute and job handling run in a separate `worker` process; the API only enqueues jobs.

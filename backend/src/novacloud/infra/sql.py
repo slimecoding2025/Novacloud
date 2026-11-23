@@ -123,7 +123,9 @@ class SqlInstanceRepository:
 
     @staticmethod
     def _i(r) -> Instance:
-        return Instance(str(r.id), str(r.organization_id), r.name, r.template, State(r.state), r.provider_ref, r.error)
+        return Instance(str(r.id), str(r.organization_id), r.name, r.template, State(r.state), r.provider_ref, r.error,
+                        str(r.network_id) if r.network_id else None, str(r.subnet_id) if r.subnet_id else None,
+                        str(r.ip) if r.ip else None)
 
     def add(self, i: Instance):
         try:
@@ -135,20 +137,21 @@ class SqlInstanceRepository:
 
     def get(self, org, instance_id):
         with self.e.connect() as c:
-            r = c.execute(text("SELECT * FROM instances WHERE id=:i AND organization_id=:o"),
+            r = c.execute(text("SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances WHERE id=:i AND organization_id=:o"),
                           dict(i=instance_id, o=org)).first()
         return self._i(r) if r else None
 
     def list(self, org):
         with self.e.connect() as c:
             return [self._i(r) for r in c.execute(text(
-                "SELECT * FROM instances WHERE organization_id=:o AND state<>'deleted' ORDER BY created_at"), dict(o=org))]
+                "SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances WHERE organization_id=:o AND state<>'deleted' ORDER BY created_at"), dict(o=org))]
 
     def save(self, i: Instance):
         with self.e.begin() as c:
-            c.execute(text("UPDATE instances SET state=:s, provider_ref=:p, error=:e, updated_at=now() "
-                           "WHERE id=:i AND organization_id=:o"),
-                      dict(s=i.state.value, p=i.provider_ref, e=i.error, i=i.id, o=i.organization_id))
+            c.execute(text("UPDATE instances SET state=:s, provider_ref=:p, error=:e, network_id=:n, subnet_id=:sn, "
+                           "ip=CAST(:ip AS inet), updated_at=now() WHERE id=:i AND organization_id=:o"),
+                      dict(s=i.state.value, p=i.provider_ref, e=i.error, n=i.network_id, sn=i.subnet_id, ip=i.ip,
+                           i=i.id, o=i.organization_id))
 
     def count_active(self, org):
         with self.e.connect() as c:
@@ -158,7 +161,7 @@ class SqlInstanceRepository:
     def all_with_refs(self):
         with self.e.connect() as c:
             return [self._i(r) for r in c.execute(text(
-                "SELECT * FROM instances WHERE provider_ref IS NOT NULL AND state IN ('running','stopped')"))]
+                "SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances WHERE provider_ref IS NOT NULL AND state IN ('running','stopped')"))]
 
 
 class SqlJobRepository:
@@ -292,3 +295,7 @@ class SqlNetworkStore:
     def delete_subnet(self, subnet_id):
         with self.e.begin() as c:
             c.execute(text("DELETE FROM subnets WHERE id=:i"), dict(i=subnet_id))
+
+    def delete_allocation(self, subnet_id, ip):
+        with self.e.begin() as c:
+            c.execute(text("DELETE FROM ip_allocations WHERE subnet_id=:s AND ip=CAST(:ip AS inet)"), dict(s=subnet_id, ip=ip))

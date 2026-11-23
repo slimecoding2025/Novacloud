@@ -30,7 +30,8 @@ def psql(db, sql=None, file=None, user=None, check=True):
 def db():
     name = "nc_test_" + uuid.uuid4().hex[:8]
     psql("postgres", f"CREATE DATABASE {name}")
-    psql(name, file=str(ROOT / "migrations/sql/0001_initial.sql"))
+    for f in sorted((ROOT / "migrations/sql").glob("*.sql")):
+        psql(name, file=str(f))
     psql(name, file=str(ROOT.parent / "deploy/postgres/roles.sql"))
     psql(name, f"INSERT INTO organizations(id,name) VALUES ('{O1}','a'),('{O2}','b')")
     yield name
@@ -108,3 +109,16 @@ def test_state_check_constraint(db):
     r = psql(db, f"INSERT INTO instances(id,organization_id,name,template,state) "
                  f"VALUES ('{uuid.uuid4()}','{O1}','x1','t','hacked')", check=False)
     assert r.returncode != 0
+
+
+def test_instance_network_columns_all_or_none(db):
+    n, s = str(uuid.uuid4()), str(uuid.uuid4())
+    psql(db, f"INSERT INTO networks(id,organization_id,name,cidr) VALUES ('{n}','{O2}','nn','172.20.0.0/16')")
+    psql(db, f"INSERT INTO subnets(id,network_id,organization_id,name,cidr,gateway) "
+             f"VALUES ('{s}','{n}','{O2}','ss','172.20.1.0/24','172.20.1.1')")
+    base = "INSERT INTO instances(id,organization_id,name,template,state,{cols}) VALUES ('{id}','{o}','{nm}','t','planned',{vals})"
+    ok = base.format(cols="network_id,subnet_id,ip", id=uuid.uuid4(), o=O2, nm="n1", vals=f"'{n}','{s}','172.20.1.2'")
+    half = base.format(cols="subnet_id", id=uuid.uuid4(), o=O2, nm="n2", vals=f"'{s}'")
+    psql(db, ok)
+    assert psql(db, half, check=False).returncode != 0  # partial attachment rejected
+    assert psql(db, f"DELETE FROM subnets WHERE id='{s}'", check=False).returncode != 0  # RESTRICT while referenced

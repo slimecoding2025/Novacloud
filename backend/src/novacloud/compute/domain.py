@@ -48,7 +48,8 @@ class Template:
 # Only these templates can be launched. Users choose a name, never an image or options.
 TEMPLATES: dict[str, Template] = {
     "alpine-small": Template("alpine-small", "alpine:3.20", 0.5, 128, ("sleep", "infinity")),
-    "nginx-small": Template("nginx-small", "nginx:1.27-alpine", 0.5, 128),
+    # Unprivileged nginx: runs as non-root on port 8080, so it works with every capability dropped.
+    "nginx-small": Template("nginx-small", "nginxinc/nginx-unprivileged:1.27-alpine", 0.5, 128),
 }
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,38}[a-z0-9]$")
@@ -67,6 +68,12 @@ def get_template(name: str) -> Template:
     return t
 
 
+@dataclass(frozen=True)
+class NetworkAttachment:
+    subnet_id: str
+    ip: str
+
+
 @dataclass
 class Instance:
     id: str
@@ -76,3 +83,6 @@ class Instance:
     state: State
     provider_ref: str | None = None
     error: str | None = None
+    network_id: str | None = None
+    subnet_id: str | None = None
+    ip: str | None = None

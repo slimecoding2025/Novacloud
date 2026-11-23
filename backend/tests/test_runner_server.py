@@ -18,7 +18,9 @@ TOKEN = "t" * 24
 class FakeDocker:
     def __init__(self):
         self.running: dict[str, bool] = {}
-        self.unmanaged = {"someone-elses-db"}
+        self.unmanaged = {"someone-elses-db", "bridge"}
+        self.networks: dict[str, bool] = {}   # name -> managed
+        self.overlap = False
         self.calls: list[tuple] = []
 
     def __call__(self, *args):
@@ -30,6 +32,20 @@ class FakeDocker:
             if ref in self.running:
                 return ok(f"{'true' if self.running[ref] else 'false'}|true")
             return ok("true|") if ref in self.unmanaged else bad
+        if cmd == "network":
+            sub, name = args[1], args[-1]
+            if sub == "inspect":
+                if name in self.networks:
+                    return ok("true" if self.networks[name] else "")
+                return ok("") if name in self.unmanaged else bad
+            if sub == "create":
+                if self.overlap:
+                    return subprocess.CompletedProcess(args, 1, "", "Pool overlaps with other one on this address space")
+                self.networks[name] = True
+                return ok()
+            if sub == "rm":
+                self.networks.pop(name, None)
+                return ok()
         if cmd == "run":
             self.running[args[args.index("--name") + 1]] = True
             return ok()
@@ -106,3 +122,35 @@ def test_never_touches_foreign_containers(runner):
     fake.running["novacloud-" + ID.replace("1", "2")] = True
     other = "novacloud-" + ID.replace("1", "3")
     assert call("DELETE", f"/v1/containers/{other}")[0] == 404  # unknown to docker
+
+
+SUB = "223e4567-e89b-12d3-a456-426614174000"
+NET = f"novacloud-net-{SUB}"
+
+
+def test_network_create_idempotent_conflict_and_delete(runner):
+    call, fake = runner
+    body = {"subnet_id": SUB, "cidr": "10.0.1.0/24", "gateway": "10.0.1.1"}
+    assert call("POST", "/v1/networks", body) == (200, {"name": NET})
+    assert call("POST", "/v1/networks", body) == (200, {"name": NET})
+    assert len([c for c in fake.calls if c[:2] == ("network", "create")]) == 1
+    assert call("DELETE", f"/v1/networks/{NET}")[0] == 200 and NET not in fake.networks
+    fake.overlap = True
+    assert call("POST", "/v1/networks", body)[0] == 409
+
+
+def test_network_rejects_bad_input_and_foreign_networks(runner):
+    call, fake = runner
+    assert call("POST", "/v1/networks", {"subnet_id": SUB, "cidr": "8.8.8.0/24", "gateway": "8.8.8.1"})[0] == 400
+    assert call("DELETE", "/v1/networks/bridge")[0] == 400
+    assert not [c for c in fake.calls if c[:2] == ("network", "rm")]
+
+
+def test_container_needs_an_existing_managed_network(runner):
+    call, fake = runner
+    body = {"instance_id": ID, "organization_id": ID, "template": "alpine-small", "network": {"subnet_id": SUB, "ip": "10.0.1.5"}}
+    assert call("POST", "/v1/containers", body)[0] == 400  # network not created yet
+    call("POST", "/v1/networks", {"subnet_id": SUB, "cidr": "10.0.1.0/24", "gateway": "10.0.1.1"})
+    assert call("POST", "/v1/containers", body) == (200, {"ref": NAME})
+    run = [c for c in fake.calls if c[0] == "run"][0]
+    assert NET in run and "10.0.1.5" in run and "none" not in run

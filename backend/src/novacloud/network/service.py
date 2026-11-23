@@ -41,11 +41,12 @@ class Subnet:
 
 
 class NetworkService:
-    def __init__(self, iam, audit, max_networks: int = 10, store=None):
+    def __init__(self, iam, audit, max_networks: int = 10, store=None, provider=None):
         """`store` (optional) persists every mutation (write-through) and is loaded once at start-up.
         With several API replicas each keeps its own cache; run a single API replica until networks
         move to read-through queries."""
         self.iam, self.audit, self.max_networks, self.store = iam, audit, max_networks, store
+        self.provider = provider  # optional NetworkProvider: create_subnet(id, cidr, gw) / delete_subnet(id)
         self.networks: dict[str, Network] = store.load() if store else {}
 
     def _net(self, p, nid) -> Network:
@@ -91,6 +92,8 @@ class NetworkService:
             if sub.overlaps(ipaddress.IPv4Network(s.cidr)):
                 raise Conflict(f"CIDR overlaps subnet {s.name}")
         obj = Subnet(str(uuid.uuid4()), net.id, p.organization_id, name, str(sub), str(sub.network_address + 1))
+        if self.provider:  # real bridge first; nothing is recorded if the host refuses it
+            self.provider.create_subnet(obj.id, obj.cidr, obj.gateway)
         net.subnets[obj.id] = obj
         if self.store:
             self.store.save_subnet(obj)
@@ -117,6 +120,20 @@ class NetworkService:
                 return ip
         raise Conflict("subnet has no free addresses")
 
+    def release_ip(self, organization_id: str, network_id: str, subnet_id: str, resource_id: str) -> None:
+        """System operation (no principal): called when the resource that owned the address is deleted."""
+        net = self.networks.get(network_id)
+        sub = net.subnets.get(subnet_id) if net and net.organization_id == organization_id else None
+        if sub is None:
+            return
+        for ip, rid in list(sub.allocations.items()):
+            if rid == resource_id:
+                del sub.allocations[ip]
+                if self.store:
+                    self.store.delete_allocation(subnet_id, ip)
+                self.audit.record(actor_id="system", organization_id=organization_id, action="ip.release",
+                                  resource_type="subnet", resource_id=subnet_id, metadata={"ip": ip})
+
     def delete_network(self, p: Principal, network_id: str, cid="") -> None:
         self.iam.require(p, "network:delete", "network", network_id, cid)
         net = self._net(p, network_id)
@@ -136,6 +153,8 @@ class NetworkService:
             raise NotFound("subnet not found")
         if sub.allocations:
             raise Conflict("subnet still has allocated addresses")
+        if self.provider:
+            self.provider.delete_subnet(subnet_id)
         del net.subnets[subnet_id]
         if self.store:
             self.store.delete_subnet(subnet_id)

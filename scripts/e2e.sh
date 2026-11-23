@@ -53,6 +53,34 @@ req -X DELETE "$API/api/v1/instances/$IID?confirm_name=web-e2e" -H 'Idempotency-
 for _ in $(seq 1 60); do docker inspect "$C" >/dev/null 2>&1 || break; sleep 2; done
 docker inspect "$C" >/dev/null 2>&1 && fail "container still exists after delete"
 
+step "networks: real isolated bridges"
+NET=$(req -X POST "$API/api/v1/networks" -H 'Content-Type: application/json' -d '{"name":"net-e2e","cidr":"10.77.0.0/16"}' | jq -r .id)
+SA=$(req -X POST "$API/api/v1/networks/$NET/subnets" -H 'Content-Type: application/json' -d '{"name":"sub-a","cidr":"10.77.1.0/24"}' | jq -r .id)
+SB=$(req -X POST "$API/api/v1/networks/$NET/subnets" -H 'Content-Type: application/json' -d '{"name":"sub-b","cidr":"10.77.2.0/24"}' | jq -r .id)
+docker network inspect "novacloud-net-$SA" >/dev/null || fail "docker network for subnet A missing"
+[ "$(docker network inspect -f '{{.Internal}}' "novacloud-net-$SA")" = true ] || fail "subnet network is not internal"
+mk() { req -X POST "$API/api/v1/instances" -H 'Content-Type: application/json' -H "Idempotency-Key: e2e-$1" \
+  -d "{\"name\":\"$1\",\"template\":\"$2\",\"network_id\":\"$NET\",\"subnet_id\":\"$3\"}" | jq -r .instance.id; }
+SRV=$(mk srv-e2e nginx-small "$SA"); CLI=$(mk cli-e2e alpine-small "$SA"); OUT=$(mk out-e2e alpine-small "$SB")
+wait_state "$SRV" running; wait_state "$CLI" running; wait_state "$OUT" running
+SIP=$(req "$API/api/v1/instances/$SRV" | jq -r .ip)
+[ "$SIP" = "10.77.1.2" ] || fail "unexpected server ip $SIP"
+for _ in $(seq 1 15); do docker exec "novacloud-$CLI" wget -q -T 3 -O- "http://$SIP:8080" 2>/dev/null | grep -qi nginx && break; sleep 2; done
+docker exec "novacloud-$CLI" wget -q -T 3 -O- "http://$SIP:8080" | grep -qi nginx || fail "same-subnet container cannot reach the server"
+if docker exec "novacloud-$OUT" wget -q -T 3 -O- "http://$SIP:8080" >/dev/null 2>&1; then fail "other subnet reached the server (no isolation)"; fi
+if docker exec "novacloud-$CLI" wget -q -T 3 -O- http://1.1.1.1 >/dev/null 2>&1; then fail "internal network reached the internet"; fi
+code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -H "X-CSRF-Token: $CSRF" -X DELETE "$API/api/v1/networks/$NET/subnets/$SA")
+[ "$code" = 409 ] || fail "deleting a subnet with allocated addresses should be 409, got $code"
+for pair in "$SRV:srv-e2e" "$CLI:cli-e2e" "$OUT:out-e2e"; do
+  id=${pair%%:*}; nm=${pair#*:}
+  req -X DELETE "$API/api/v1/instances/$id?confirm_name=$nm" -H "Idempotency-Key: e2e-del-$nm" >/dev/null
+done
+for id in "$SRV" "$CLI" "$OUT"; do for _ in $(seq 1 60); do docker inspect "novacloud-$id" >/dev/null 2>&1 || break; sleep 2; done; done
+req -X DELETE "$API/api/v1/networks/$NET/subnets/$SA" >/dev/null
+req -X DELETE "$API/api/v1/networks/$NET/subnets/$SB" >/dev/null
+docker network inspect "novacloud-net-$SA" >/dev/null 2>&1 && fail "docker network not removed with subnet"
+req -X DELETE "$API/api/v1/networks/$NET" >/dev/null
+
 step "audit chain verifies"
 req "$API/api/v1/audit/verify" | jq -e '.valid == true' >/dev/null || fail "audit chain invalid"
 
