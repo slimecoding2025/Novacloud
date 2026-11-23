@@ -14,6 +14,9 @@ from novacloud.orchestration.domain import Job
 from novacloud.storage.service import ObjectMeta
 
 
+_INST_SELECT = "SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances "
+
+
 def make_engine(url: str):
     return create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5)
 
@@ -137,14 +140,14 @@ class SqlInstanceRepository:
 
     def get(self, org, instance_id):
         with self.e.connect() as c:
-            r = c.execute(text("SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances WHERE id=:i AND organization_id=:o"),
+            r = c.execute(text(_INST_SELECT + "WHERE id=:i AND organization_id=:o"),
                           dict(i=instance_id, o=org)).first()
         return self._i(r) if r else None
 
     def list(self, org):
         with self.e.connect() as c:
             return [self._i(r) for r in c.execute(text(
-                "SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances WHERE organization_id=:o AND state<>'deleted' ORDER BY created_at"), dict(o=org))]
+                _INST_SELECT + "WHERE organization_id=:o AND state<>'deleted' ORDER BY created_at"), dict(o=org))]
 
     def save(self, i: Instance):
         with self.e.begin() as c:
@@ -161,7 +164,7 @@ class SqlInstanceRepository:
     def all_with_refs(self):
         with self.e.connect() as c:
             return [self._i(r) for r in c.execute(text(
-                "SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances WHERE provider_ref IS NOT NULL AND state IN ('running','stopped')"))]
+                _INST_SELECT + "WHERE provider_ref IS NOT NULL AND state IN ('running','stopped')"))]
 
 
 class SqlJobRepository:

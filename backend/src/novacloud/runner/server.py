@@ -17,7 +17,10 @@ NET_PATH_RE = re.compile(r"^/v1/networks(?:/(?P<net>[^/]+))?$")
 
 
 def docker(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=60, check=False)  # noqa: S603
+    p = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=60, check=False)  # noqa: S603
+    if p.returncode != 0 and args[:2] != ("network", "inspect") and args[0] != "inspect":
+        print(f"docker {args[0]} {args[1] if len(args) > 1 else ''} failed: {p.stderr.strip()[:300]}", flush=True)  # diagnostics, no secrets
+    return p
 
 
 def status_of(ref: str):

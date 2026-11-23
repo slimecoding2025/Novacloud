@@ -17,7 +17,12 @@ curl -fsS -X POST "$API/api/v1/auth/register" -H 'Content-Type: application/json
 CSRF=$(curl -fsS -c "$JAR" -X POST "$API/api/v1/auth/login" -H 'Content-Type: application/json' \
   -d "{\"email\":\"$EMAIL\",\"password\":\"$PW\"}" | jq -r .csrf_token)
 [ -n "$CSRF" ] && [ "$CSRF" != null ] || fail "no csrf token"
-req() { curl -fsS -b "$JAR" -H "X-CSRF-Token: $CSRF" "$@"; }
+req() {
+  local out; out=$(mktemp)
+  local code; code=$(curl -sS -o "$out" -w '%{http_code}' -b "$JAR" -H "X-CSRF-Token: $CSRF" "$@") || { cat "$out" >&2; rm -f "$out"; return 22; }
+  if [ "$code" -ge 400 ]; then echo "HTTP $code for: $*  body: $(cat "$out")" >&2; rm -f "$out"; return 22; fi
+  cat "$out"; rm -f "$out"
+}
 
 step "request without CSRF is rejected"
 code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -X POST "$API/api/v1/instances" -H 'Content-Type: application/json' \
@@ -75,9 +80,11 @@ for pair in "$SRV:srv-e2e" "$CLI:cli-e2e" "$OUT:out-e2e"; do
   id=${pair%%:*}; nm=${pair#*:}
   req -X DELETE "$API/api/v1/instances/$id?confirm_name=$nm" -H "Idempotency-Key: e2e-del-$nm" >/dev/null
 done
-for id in "$SRV" "$CLI" "$OUT"; do for _ in $(seq 1 60); do docker inspect "novacloud-$id" >/dev/null 2>&1 || break; sleep 2; done; done
-req -X DELETE "$API/api/v1/networks/$NET/subnets/$SA" >/dev/null
-req -X DELETE "$API/api/v1/networks/$NET/subnets/$SB" >/dev/null
+for id in "$SRV" "$CLI" "$OUT"; do wait_state "$id" deleted; done
+del_subnet() { for _ in $(seq 1 15); do
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -H "X-CSRF-Token: $CSRF" -X DELETE "$API/api/v1/networks/$NET/subnets/$1")" = 204 ] && return 0; sleep 1; done
+  fail "could not delete subnet $1"; }
+del_subnet "$SA"; del_subnet "$SB"
 docker network inspect "novacloud-net-$SA" >/dev/null 2>&1 && fail "docker network not removed with subnet"
 req -X DELETE "$API/api/v1/networks/$NET" >/dev/null
 
