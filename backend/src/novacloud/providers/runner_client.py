@@ -32,11 +32,11 @@ class RunnerComputeProvider:
     def create(self, instance_id, organization_id, template, network=None):
         body = {"instance_id": instance_id, "organization_id": organization_id, "template": template.name}
         if network:
-            body["network"] = {"subnet_id": network.subnet_id, "ip": network.ip}
+            body["network"] = {"subnet_id": network.subnet_id, "ip": network.ip, "published_port": network.published_port}
         return self._call("POST", "/v1/containers", body)["ref"]
 
-    def create_subnet(self, subnet_id, cidr, gateway):
-        self._call("POST", "/v1/networks", {"subnet_id": subnet_id, "cidr": cidr, "gateway": gateway})
+    def create_subnet(self, subnet_id, cidr, gateway, egress=False):
+        self._call("POST", "/v1/networks", {"subnet_id": subnet_id, "cidr": cidr, "gateway": gateway, "egress": egress})
 
     def delete_subnet(self, subnet_id):
         self._call("DELETE", f"/v1/networks/novacloud-net-{subnet_id}")

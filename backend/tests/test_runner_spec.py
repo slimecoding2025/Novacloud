@@ -59,3 +59,22 @@ def test_attached_container_uses_user_network_and_ip_only():
             build_run_args(ID, ID, "alpine-small", network=ID, ip=bad_ip)
     with pytest.raises(ValueError):
         build_run_args(ID, ID, "alpine-small", network="host", ip="10.0.1.5")
+
+
+def test_egress_subnet_is_not_internal_but_default_is():
+    from novacloud.runner.spec import build_network_args
+    assert "--internal" in build_network_args(ID, "10.0.1.0/24", "10.0.1.1")
+    assert "--internal" not in build_network_args(ID, "10.0.1.0/24", "10.0.1.1", egress=True)
+
+
+def test_published_port_binds_loopback_only_and_is_validated():
+    s = build_run_args(ID, ID, "nginx-small", network=ID, ip="10.0.1.5", published_port=20080)
+    assert s[s.index("--publish") + 1] == "127.0.0.1:20080:8080"
+    assert "0.0.0.0" not in " ".join(s)
+    for bad in (80, 19999, 30000, True, "20080; x"):
+        with pytest.raises(ValueError):
+            build_run_args(ID, ID, "nginx-small", network=ID, ip="10.0.1.5", published_port=bad)
+    with pytest.raises(ValueError):  # template without a port
+        build_run_args(ID, ID, "alpine-small", network=ID, ip="10.0.1.5", published_port=20080)
+    with pytest.raises(ValueError):  # no network
+        build_run_args(ID, ID, "nginx-small", published_port=20080)

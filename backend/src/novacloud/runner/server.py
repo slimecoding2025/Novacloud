@@ -80,7 +80,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(400, {"error": "unknown network"})
                 args = build_run_args(str(body.get("instance_id", "")), str(body.get("organization_id", "")),
                                       str(body.get("template", "")),
-                                      str(net["subnet_id"]) if net else None, str(net["ip"]) if net else None)
+                                      str(net["subnet_id"]) if net else None, str(net["ip"]) if net else None,
+                                      net.get("published_port") if net else None)
                 name = container_name(body["instance_id"])
                 if status_of(name) is not None:  # idempotent create
                     return self._send(200, {"ref": name})
@@ -107,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
                 if n > 4096:
                     return self._send(413, {"error": "too large"})
                 body = json.loads(self.rfile.read(n) or b"{}")
-                args = build_network_args(str(body.get("subnet_id", "")), str(body.get("cidr", "")), str(body.get("gateway", "")))
+                args = build_network_args(str(body.get("subnet_id", "")), str(body.get("cidr", "")), str(body.get("gateway", "")), body.get("egress") is True)
                 name = args[-1]
                 state = network_managed(name)
                 if state is False:

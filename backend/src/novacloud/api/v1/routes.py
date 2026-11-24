@@ -40,11 +40,16 @@ class InstanceIn(BaseModel):
     template: str = Field(max_length=40)
     network_id: str | None = Field(default=None, max_length=36)
     subnet_id: str | None = Field(default=None, max_length=36)
+    published_port: int | None = Field(default=None, ge=20000, le=29999)
 
 
 class NetworkIn(BaseModel):
     name: str = Field(max_length=40)
     cidr: str = Field(max_length=18)
+
+
+class SubnetIn(NetworkIn):
+    egress: bool = False
 
 
 class AllocIn(BaseModel):
@@ -53,7 +58,7 @@ class AllocIn(BaseModel):
 
 def _inst(i):
     return {"id": i.id, "name": i.name, "template": i.template, "state": i.state.value, "error": i.error,
-            "network_id": i.network_id, "subnet_id": i.subnet_id, "ip": i.ip}
+            "network_id": i.network_id, "subnet_id": i.subnet_id, "ip": i.ip, "published_port": i.published_port}
 def _job(j): return {"id": j.id, "kind": j.kind, "status": j.status, "attempts": j.attempts, "error": j.error, "result": j.result}
 
 
@@ -118,7 +123,7 @@ def list_instances(p: Principal = Depends(principal), c=Depends(container)):
 def create_instance(body: InstanceIn, request: Request, idempotency_key: str | None = Header(default=None),
                     p: Principal = Depends(principal), c=Depends(container)):
     inst, job = c.compute.create_instance(p, body.name, body.template, idempotency_key or "", cid(request),
-                                          body.network_id, body.subnet_id)
+                                          body.network_id, body.subnet_id, body.published_port)
     return {"instance": _inst(inst), "job": _job(job)}
 
 
@@ -217,8 +222,8 @@ def delete_network(network_id: str, request: Request, p: Principal = Depends(pri
 
 
 @router.post("/networks/{network_id}/subnets", status_code=201)
-def create_subnet(network_id: str, body: NetworkIn, request: Request, p: Principal = Depends(principal), c=Depends(container)):
-    s = c.network.create_subnet(p, network_id, body.name, body.cidr, cid(request))
+def create_subnet(network_id: str, body: SubnetIn, request: Request, p: Principal = Depends(principal), c=Depends(container)):
+    s = c.network.create_subnet(p, network_id, body.name, body.cidr, cid(request), body.egress)
     return {k: v for k, v in asdict(s).items() if k != "allocations"}
 
 

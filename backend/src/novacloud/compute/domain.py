@@ -43,13 +43,14 @@ class Template:
     cpus: float
     memory_mb: int
     command: tuple[str, ...] = ()
+    port: int | None = None  # container port that may be published on the host loopback
 
 
 # Only these templates can be launched. Users choose a name, never an image or options.
 TEMPLATES: dict[str, Template] = {
     "alpine-small": Template("alpine-small", "alpine:3.20", 0.5, 128, ("sleep", "infinity")),
     # Unprivileged nginx: runs as non-root on port 8080, so it works with every capability dropped.
-    "nginx-small": Template("nginx-small", "nginxinc/nginx-unprivileged:1.27-alpine", 0.5, 128),
+    "nginx-small": Template("nginx-small", "nginxinc/nginx-unprivileged:1.27-alpine", 0.5, 128, (), 8080),
 }
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,38}[a-z0-9]$")
@@ -72,6 +73,7 @@ def get_template(name: str) -> Template:
 class NetworkAttachment:
     subnet_id: str
     ip: str
+    published_port: int | None = None  # host port bound on 127.0.0.1 only
 
 
 @dataclass
@@ -86,3 +88,4 @@ class Instance:
     network_id: str | None = None
     subnet_id: str | None = None
     ip: str | None = None
+    published_port: int | None = None

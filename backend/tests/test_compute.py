@@ -189,3 +189,40 @@ def test_cannot_attach_to_another_orgs_subnet(net_env, iam):
     _, other = iam.login("b@example.com", PW)
     with pytest.raises(NotFound):
         svc.create_instance(other, "web-01", "alpine-small", "k1", network_id=n.id, subnet_id=s.id)
+
+
+# ---- egress policy and published ports -----------------------------------------------------------
+def test_subnet_is_internal_by_default_and_egress_is_opt_in(net_env):
+    _, _, prov, net, owner, n, s = net_env
+    assert prov.egress[s.id] is False and net.networks[n.id].subnets[s.id].egress is False
+    e = net.create_subnet(owner, n.id, "sub-egress", "10.0.2.0/29", egress=True)
+    assert prov.egress[e.id] is True
+
+
+def test_published_port_requires_egress_subnet_and_template_port(net_env):
+    svc, worker, prov, net, owner, n, s = net_env
+    with pytest.raises(InvalidInput):  # internal subnet: Docker cannot publish
+        svc.create_instance(owner, "web-01", "nginx-small", "k1", network_id=n.id, subnet_id=s.id, published_port=20001)
+    e = net.create_subnet(owner, n.id, "sub-egress", "10.0.2.0/29", egress=True)
+    with pytest.raises(InvalidInput):  # alpine exposes no port
+        svc.create_instance(owner, "web-02", "alpine-small", "k2", network_id=n.id, subnet_id=e.id, published_port=20001)
+    for bad in (80, 19999, 30000, True):
+        with pytest.raises(InvalidInput):
+            svc.create_instance(owner, "web-03", "nginx-small", "k3", network_id=n.id, subnet_id=e.id, published_port=bad)
+    with pytest.raises(InvalidInput):  # no subnet at all
+        svc.create_instance(owner, "web-04", "nginx-small", "k4", published_port=20001)
+    inst, _ = svc.create_instance(owner, "web-05", "nginx-small", "k5", network_id=n.id, subnet_id=e.id, published_port=20001)
+    worker.run_once()
+    assert prov.published[f"fake-{inst.id}"] == 20001
+
+
+def test_published_port_is_unique_and_freed_on_delete(net_env):
+    svc, worker, prov, net, owner, n, _ = net_env
+    e = net.create_subnet(owner, n.id, "sub-egress", "10.0.2.0/29", egress=True)
+    a, _ = svc.create_instance(owner, "web-01", "nginx-small", "k1", network_id=n.id, subnet_id=e.id, published_port=20002)
+    worker.run_once()
+    with pytest.raises(Conflict):
+        svc.create_instance(owner, "web-02", "nginx-small", "k2", network_id=n.id, subnet_id=e.id, published_port=20002)
+    svc.request_action(owner, a.id, "delete", "k3", confirm_name="web-01"); worker.run_once()
+    assert svc.repo.get(owner.organization_id, a.id).published_port is None
+    svc.create_instance(owner, "web-02", "nginx-small", "k4", network_id=n.id, subnet_id=e.id, published_port=20002)
