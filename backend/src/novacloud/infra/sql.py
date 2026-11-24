@@ -270,7 +270,8 @@ class SqlNetworkStore:
             for r in c.execute(text("SELECT id, organization_id, name, cidr::text AS cidr FROM networks")):
                 nets[str(r.id)] = Network(str(r.id), str(r.organization_id), r.name, r.cidr)
             subs = {}
-            for r in c.execute(text("SELECT id, network_id, organization_id, name, cidr::text AS cidr, host(gateway) AS gw, egress, egress_allow FROM subnets")):
+            for r in c.execute(text("SELECT id, network_id, organization_id, name, cidr::text AS cidr, host(gateway) AS gw, "
+                                    "egress, egress_allow FROM subnets")):
                 s = Subnet(str(r.id), str(r.network_id), str(r.organization_id), r.name, r.cidr, r.gw, r.egress, list(r.egress_allow))
                 subs[s.id] = s
                 nets[s.network_id].subnets[s.id] = s

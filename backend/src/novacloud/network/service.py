@@ -115,7 +115,8 @@ class NetworkService:
         if self.store:
             self.store.save_subnet(obj)
         self.audit.record(actor_id=p.user_id, organization_id=p.organization_id, action="subnet.create",
-                          resource_type="subnet", resource_id=obj.id, correlation_id=cid, metadata={"cidr": str(sub), "egress": obj.egress, "egress_allow": allow})
+                          resource_type="subnet", resource_id=obj.id, correlation_id=cid, metadata={"cidr": str(sub), "egress": obj.egress,
+                                                                                  "egress_allow": allow})
         return obj
 
     def allocate_ip(self, p: Principal, network_id: str, subnet_id: str, resource_id: str, cid="") -> str:
