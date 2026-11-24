@@ -34,3 +34,28 @@ def test_ref_validation():
     for bad in ["nginx", "novacloud-x", "-f novacloud-" + ID, "novacloud-" + ID + " --all"]:
         with pytest.raises(ValueError):
             validate_ref(bad)
+
+
+def test_network_args_are_internal_private_and_validated():
+    from novacloud.runner.spec import build_network_args, network_name, validate_net_ref
+    a = build_network_args(ID, "10.0.1.0/24", "10.0.1.1")
+    assert "--internal" in a and a[-1] == f"novacloud-net-{ID}" and "--subnet" in a
+    assert validate_net_ref(network_name(ID)) == f"novacloud-net-{ID}"
+    for cidr, gw in [("8.8.8.0/24", "8.8.8.1"), ("10.0.1.0/24", "10.9.9.9"), ("10.0.1.1/24", "10.0.1.1"), ("fd00::/64", "fd00::1"), ("10.0.0.0/30", "10.0.0.1")]:
+        with pytest.raises(ValueError):
+            build_network_args(ID, cidr, gw)
+    for bad in ["bridge", "host", "novacloud-net-x", "novacloud-net-" + ID + " --force"]:
+        with pytest.raises(ValueError):
+            validate_net_ref(bad)
+
+
+def test_attached_container_uses_user_network_and_ip_only():
+    s = build_run_args(ID, ID, "alpine-small", network=ID, ip="10.0.1.5")
+    j = " ".join(s)
+    assert f"--network novacloud-net-{ID}" in j and "--ip 10.0.1.5" in j and "--network none" not in j
+    assert "--network host" not in j and "--privileged" not in s
+    for bad_ip in ["", "10.0.1.5; rm -rf /", "::1", "999.1.1.1"]:
+        with pytest.raises(ValueError):
+            build_run_args(ID, ID, "alpine-small", network=ID, ip=bad_ip)
+    with pytest.raises(ValueError):
+        build_run_args(ID, ID, "alpine-small", network="host", ip="10.0.1.5")

@@ -2,8 +2,12 @@
 
 
 class FakeComputeProvider:
+    """Implements both the compute and the network provider ports."""
+
     def __init__(self):
         self.containers: dict[str, str] = {}
+        self.attachments: dict[str, tuple[str, str] | None] = {}
+        self.subnets: dict[str, tuple[str, str]] = {}
         self.fail_next: str | None = None
 
     def _maybe_fail(self, op):
@@ -11,10 +15,11 @@ class FakeComputeProvider:
             self.fail_next = None
             raise RuntimeError(f"injected failure in {op}")
 
-    def create(self, instance_id, organization_id, template):
+    def create(self, instance_id, organization_id, template, network=None):
         self._maybe_fail("create")
         ref = f"fake-{instance_id}"
         self.containers[ref] = "running"
+        self.attachments[ref] = (network.subnet_id, network.ip) if network else None
         return ref
 
     def start(self, ref):
@@ -28,6 +33,16 @@ class FakeComputeProvider:
     def delete(self, ref):
         self._maybe_fail("delete")
         self.containers.pop(ref, None)
+        self.attachments.pop(ref, None)
 
     def status(self, ref):
         return self.containers.get(ref)
+
+    # network port
+    def create_subnet(self, subnet_id, cidr, gateway):
+        self._maybe_fail("create_subnet")
+        self.subnets[subnet_id] = (cidr, gateway)
+
+    def delete_subnet(self, subnet_id):
+        self._maybe_fail("delete_subnet")
+        self.subnets.pop(subnet_id, None)

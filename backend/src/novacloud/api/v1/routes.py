@@ -38,6 +38,8 @@ class RoleIn(BaseModel):
 class InstanceIn(BaseModel):
     name: str = Field(max_length=40)
     template: str = Field(max_length=40)
+    network_id: str | None = Field(default=None, max_length=36)
+    subnet_id: str | None = Field(default=None, max_length=36)
 
 
 class NetworkIn(BaseModel):
@@ -49,7 +51,9 @@ class AllocIn(BaseModel):
     resource_id: str = Field(max_length=128)
 
 
-def _inst(i): return {"id": i.id, "name": i.name, "template": i.template, "state": i.state.value, "error": i.error}
+def _inst(i):
+    return {"id": i.id, "name": i.name, "template": i.template, "state": i.state.value, "error": i.error,
+            "network_id": i.network_id, "subnet_id": i.subnet_id, "ip": i.ip}
 def _job(j): return {"id": j.id, "kind": j.kind, "status": j.status, "attempts": j.attempts, "error": j.error, "result": j.result}
 
 
@@ -113,7 +117,8 @@ def list_instances(p: Principal = Depends(principal), c=Depends(container)):
 @router.post("/instances", status_code=202)
 def create_instance(body: InstanceIn, request: Request, idempotency_key: str | None = Header(default=None),
                     p: Principal = Depends(principal), c=Depends(container)):
-    inst, job = c.compute.create_instance(p, body.name, body.template, idempotency_key or "", cid(request))
+    inst, job = c.compute.create_instance(p, body.name, body.template, idempotency_key or "", cid(request),
+                                          body.network_id, body.subnet_id)
     return {"instance": _inst(inst), "job": _job(job)}
 
 

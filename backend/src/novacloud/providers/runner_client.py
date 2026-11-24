@@ -3,7 +3,7 @@ import json
 import urllib.error
 import urllib.request
 
-from novacloud.core.errors import ProviderError
+from novacloud.core.errors import Conflict, ProviderError
 
 
 class RunnerComputeProvider:
@@ -23,14 +23,23 @@ class RunnerComputeProvider:
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return {"status": None}
+            if e.code == 409:
+                raise Conflict("address range unavailable or resource still in use on this host") from None
             raise ProviderError(f"runner returned {e.code}") from None
         except (urllib.error.URLError, TimeoutError) as e:
             raise ProviderError(f"runner unreachable: {e}") from None
 
-    def create(self, instance_id, organization_id, template):
-        r = self._call("POST", "/v1/containers", {
-            "instance_id": instance_id, "organization_id": organization_id, "template": template.name})
-        return r["ref"]
+    def create(self, instance_id, organization_id, template, network=None):
+        body = {"instance_id": instance_id, "organization_id": organization_id, "template": template.name}
+        if network:
+            body["network"] = {"subnet_id": network.subnet_id, "ip": network.ip}
+        return self._call("POST", "/v1/containers", body)["ref"]
+
+    def create_subnet(self, subnet_id, cidr, gateway):
+        self._call("POST", "/v1/networks", {"subnet_id": subnet_id, "cidr": cidr, "gateway": gateway})
+
+    def delete_subnet(self, subnet_id):
+        self._call("DELETE", f"/v1/networks/novacloud-net-{subnet_id}")
 
     def start(self, ref): self._call("POST", f"/v1/containers/{ref}/start")
     def stop(self, ref): self._call("POST", f"/v1/containers/{ref}/stop")

@@ -122,3 +122,70 @@ def test_reconcile_detects_drift(env):
     prov.containers.clear()  # container disappeared behind our back
     assert svc.reconcile()[0]["actual"] is None
     assert svc.get_instance(owner, inst.id).state == State.FAILED
+
+
+# ---- network attachment ------------------------------------------------------------------------
+@pytest.fixture
+def net_env(iam, audit):
+    from novacloud.network.service import NetworkService
+    jobs, prov = InMemoryJobRepository(), FakeComputeProvider()
+    net = NetworkService(iam, audit, provider=prov)
+    svc = ComputeService(InMemoryInstanceRepository(), jobs, prov, iam, audit, network=net)
+    iam.register_organization("A", "a@example.com", PW)
+    _, owner = iam.login("a@example.com", PW)
+    n = net.create_network(owner, "net-a", "10.0.0.0/16")
+    s = net.create_subnet(owner, n.id, "sub-a", "10.0.1.0/29")
+    return svc, Worker(jobs, svc.handlers()), prov, net, owner, n, s
+
+
+def test_subnet_creates_real_bridge_and_deletes_it(net_env):
+    svc, _, prov, net, owner, n, s = net_env
+    assert prov.subnets[s.id] == ("10.0.1.0/29", "10.0.1.1")
+    net.delete_subnet(owner, n.id, s.id)
+    assert prov.subnets == {}
+
+
+def test_provider_refusal_records_nothing(net_env):
+    svc, _, prov, net, owner, n, _ = net_env
+    prov.fail_next = "create_subnet"
+    with pytest.raises(RuntimeError):
+        net.create_subnet(owner, n.id, "sub-b", "10.0.2.0/29")
+    assert len(net.networks[n.id].subnets) == 1
+
+
+def test_instance_gets_ip_and_attachment_then_releases_on_delete(net_env):
+    svc, worker, prov, net, owner, n, s = net_env
+    inst, _ = svc.create_instance(owner, "web-01", "alpine-small", "k1", network_id=n.id, subnet_id=s.id)
+    assert inst.ip == "10.0.1.2" and inst.subnet_id == s.id
+    worker.run_once()
+    assert prov.attachments[f"fake-{inst.id}"] == (s.id, "10.0.1.2")
+    with pytest.raises(Conflict):
+        net.delete_subnet(owner, n.id, s.id)  # address still allocated
+    svc.request_action(owner, inst.id, "delete", "k2", confirm_name="web-01"); worker.run_once()
+    assert net.networks[n.id].subnets[s.id].allocations == {}
+    net.delete_subnet(owner, n.id, s.id)
+
+
+def test_full_subnet_marks_instance_deleted_and_no_ip_leak(net_env):
+    svc, _, _, net, owner, n, s = net_env  # /29: hosts .1-.6, gateway .1 -> 5 usable
+    for i in range(5):
+        svc.create_instance(owner, f"web-0{i}", "alpine-small", f"k{i}", network_id=n.id, subnet_id=s.id)
+    with pytest.raises(Conflict):
+        svc.create_instance(owner, "web-09", "alpine-small", "k9", network_id=n.id, subnet_id=s.id)
+    assert [i.name for i in svc.repo.list(owner.organization_id)].count("web-09") == 0
+
+
+def test_attachment_arguments_validated(net_env):
+    svc, _, _, _, owner, n, s = net_env
+    with pytest.raises(InvalidInput):
+        svc.create_instance(owner, "web-01", "alpine-small", "k1", network_id=n.id)  # subnet missing
+    with pytest.raises(NotFound):
+        svc.create_instance(owner, "web-01", "alpine-small", "k2", network_id=n.id, subnet_id="nope")
+
+
+def test_cannot_attach_to_another_orgs_subnet(net_env, iam):
+    svc, _, _, _, _, n, s = net_env
+    iam.register_organization("B", "b@example.com", PW)
+    _, other = iam.login("b@example.com", PW)
+    with pytest.raises(NotFound):
+        svc.create_instance(other, "web-01", "alpine-small", "k1", network_id=n.id, subnet_id=s.id)

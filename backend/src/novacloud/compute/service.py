@@ -5,7 +5,7 @@ import uuid
 from typing import Protocol
 
 from novacloud.audit.service import AuditService
-from novacloud.compute.domain import Instance, State, get_template, transition, validate_name
+from novacloud.compute.domain import Instance, NetworkAttachment, State, get_template, transition, validate_name
 from novacloud.compute.ports import ComputeProvider
 from novacloud.core.errors import Conflict, InvalidInput, NotFound
 from novacloud.iam.domain import Principal
@@ -51,12 +51,14 @@ class InMemoryInstanceRepository:
 
 class ComputeService:
     def __init__(self, repo: InstanceRepository, jobs, provider: ComputeProvider, iam: IamService,
-                 audit: AuditService, max_instances: int = 20):
+                 audit: AuditService, max_instances: int = 20, network=None):
         self.repo, self.jobs, self.provider, self.iam, self.audit = repo, jobs, provider, iam, audit
+        self.network = network  # NetworkService, needed only when instances are attached to subnets
         self.max_instances = max_instances
 
     # -- API-facing (authorized, tenant-scoped); work is done asynchronously by the worker ----------
-    def create_instance(self, p: Principal, name: str, template: str, idempotency_key: str, cid="") -> tuple[Instance, Job]:
+    def create_instance(self, p: Principal, name: str, template: str, idempotency_key: str, cid="",
+                        network_id: str | None = None, subnet_id: str | None = None) -> tuple[Instance, Job]:
         self.iam.require(p, "instance:create", "instance", "-", cid)
         validate_name(name)
         get_template(template)
@@ -70,13 +72,26 @@ class ComputeService:
             return found, existing
         if self.repo.count_active(p.organization_id) >= self.max_instances:
             raise Conflict("instance quota reached")
+        if bool(network_id) != bool(subnet_id):
+            raise InvalidInput("network_id and subnet_id must be given together")
+        if subnet_id and self.network is None:
+            raise InvalidInput("networking is not enabled")
         inst = Instance(str(uuid.uuid4()), p.organization_id, name, template, State.PLANNED)
         self.repo.add(inst)
+        if subnet_id and network_id:
+            try:
+                inst.ip = self.network.allocate_ip(p, network_id, subnet_id, inst.id, cid)
+            except Exception:
+                inst.state = State.DELETED  # planned -> deleted: nothing was provisioned
+                self.repo.save(inst)
+                raise
+            inst.network_id, inst.subnet_id = network_id, subnet_id
+            self.repo.save(inst)
         job, _ = self.jobs.enqueue(new_job(p.organization_id, "instance.create",
                                            {"instance_id": inst.id}, idempotency_key))
         self.audit.record(actor_id=p.user_id, organization_id=p.organization_id, action="instance.create",
                           resource_type="instance", resource_id=inst.id, correlation_id=cid,
-                          metadata={"name": name, "template": template})
+                          metadata={"name": name, "template": template, "ip": inst.ip})
         return inst, job
 
     def _job_for_key(self, org, key):
@@ -116,6 +131,10 @@ class ComputeService:
         return {"instance.create": self._h_create, "instance.start": self._h_start,
                 "instance.stop": self._h_stop, "instance.delete": self._h_delete}
 
+    @staticmethod
+    def _attachment(inst: Instance) -> NetworkAttachment | None:
+        return NetworkAttachment(inst.subnet_id, inst.ip) if inst.subnet_id and inst.ip else None
+
     def _load(self, job: Job) -> Instance:
         inst = self.repo.get(job.organization_id, job.payload["instance_id"])
         if inst is None:
@@ -134,7 +153,7 @@ class ComputeService:
             return {"state": inst.state.value}
         self._set(inst, State.PROVISIONING)
         try:
-            ref = self.provider.create(inst.id, inst.organization_id, get_template(inst.template))
+            ref = self.provider.create(inst.id, inst.organization_id, get_template(inst.template), self._attachment(inst))
         except Exception as e:  # noqa: BLE001
             self._set(inst, State.FAILED, error=str(e)[:300])
             raise
@@ -148,7 +167,7 @@ class ComputeService:
             if inst.provider_ref and self.provider.status(inst.provider_ref):
                 self.provider.start(inst.provider_ref)
             else:
-                inst.provider_ref = self.provider.create(inst.id, inst.organization_id, get_template(inst.template))
+                inst.provider_ref = self.provider.create(inst.id, inst.organization_id, get_template(inst.template), self._attachment(inst))
         except Exception as e:  # noqa: BLE001
             self._set(inst, State.FAILED, error=str(e)[:300])
             raise
@@ -178,6 +197,11 @@ class ComputeService:
             self._set(inst, State.FAILED, error=str(e)[:300])
             raise
         self._set(inst, State.DELETED)
+        if inst.subnet_id and inst.network_id and self.network:
+            self.network.release_ip(inst.organization_id, inst.network_id, inst.subnet_id, inst.id)
+            # the address is free again; drop the reference so the subnet can be deleted (history lives in the audit log)
+            inst.network_id = inst.subnet_id = inst.ip = None
+            self.repo.save(inst)
         return {"state": "deleted"}
 
     # -- reconciliation: recorded state vs provider state ---------------------------------------------
