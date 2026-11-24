@@ -44,7 +44,7 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 | Web console (React/TypeScript): overview dashboard, instances, jobs, objects, networks, audit, members; light/dark theme | Yes | Type-checked and built in CI; not exercised in a browser |
 | CI (GitHub Actions), Dependabot, security policy | Yes | Green: ruff, mypy, bandit, pip-audit, pytest on PostgreSQL 16, Alembic upgrade/downgrade, npm typecheck/build/audit, gitleaks, hadolint, trivy, compose validation |
 
-Test suite in CI: unit, HTTP, runner and real-PostgreSQL tests plus the `scripts/e2e.sh` end-to-end run (containers, hardening flags, same-subnet connectivity, cross-subnet isolation) and Playwright browser tests of the console (`ui-tests/`: sign-in, instance lifecycle, audit log, sign-out).
+Test suite in CI: unit, HTTP, runner and real-PostgreSQL tests plus the `scripts/e2e.sh` end-to-end run (containers, hardening flags, same-subnet connectivity, cross-subnet isolation) and Playwright browser tests of the console (`ui-tests/`: sign-in, instance lifecycle, objects, members, networks, audit log, sign-out).
 
 ## Features
 
@@ -110,7 +110,7 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 
 ## Known limitations
 
-- Browser tests cover the main console flows (sign-in, instance lifecycle, audit, sign-out); Networks, Objects and Members pages are not yet covered.
+- Browser tests cover every console page except Jobs and Overview (both are read-only views).
 - Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Subnets are internal-only: no outbound internet, no published ports.
 - Network state is re-read from PostgreSQL before every operation (API and worker agree). Rate limiting is still per process, so it is per replica.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.
