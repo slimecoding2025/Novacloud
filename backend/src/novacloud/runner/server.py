@@ -9,9 +9,12 @@ import re
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from novacloud.core.netpolicy import validate_egress_allow
+from novacloud.runner import firewall
 from novacloud.runner.spec import build_network_args, build_run_args, container_name, network_name, validate_net_ref, validate_ref
 
 TOKEN = os.environ.get("RUNNER_TOKEN", "")
+FIREWALL_IMAGE = os.environ.get("RUNNER_FIREWALL_IMAGE", "")  # image with iptables (the runner image itself)
 PATH_RE = re.compile(r"^/v1/containers(?:/(?P<ref>[^/]+)(?:/(?P<act>start|stop))?)?$")
 NET_PATH_RE = re.compile(r"^/v1/networks(?:/(?P<net>[^/]+))?$")
 
@@ -110,21 +113,36 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(n) or b"{}")
                 args = build_network_args(str(body.get("subnet_id", "")), str(body.get("cidr", "")), str(body.get("gateway", "")), body.get("egress") is True)
                 name = args[-1]
+                allow = validate_egress_allow(body.get("egress_allow") or [])
+                if allow and (body.get("egress") is not True or not FIREWALL_IMAGE):
+                    return self._send(400, {"error": "egress allow-list needs egress and a firewall image"})
                 state = network_managed(name)
                 if state is False:
                     return self._send(409, {"error": "name taken by a foreign network"})
-                if state is True:  # idempotent create
-                    return self._send(200, {"name": name})
-                p = docker(*args[1:])
-                if p.returncode == 0:
-                    return self._send(200, {"name": name})
-                overlap = "overlap" in p.stderr.lower() or "pool" in p.stderr.lower()
-                return self._send(409 if overlap else 500, {"error": "address range unavailable" if overlap else "create failed"})
+                created = state is not True
+                if created:
+                    p = docker(*args[1:])
+                    if p.returncode != 0:
+                        overlap = "overlap" in p.stderr.lower() or "pool" in p.stderr.lower()
+                        return self._send(409 if overlap else 500, {"error": "address range unavailable" if overlap else "create failed"})
+                if allow:  # (re)apply the allow-list; on failure leave nothing half-configured
+                    sid, cidr = str(body["subnet_id"]), str(body["cidr"])
+                    if not firewall.apply(docker, FIREWALL_IMAGE, sid, cidr, allow):
+                        firewall.remove(docker, FIREWALL_IMAGE, sid, cidr)
+                        if created:
+                            docker("network", "rm", name)
+                        return self._send(500, {"error": "firewall setup failed"})
+                return self._send(200, {"name": name})
             if method == "DELETE" and net_ref:
                 name = validate_net_ref(net_ref)
                 state = network_managed(name)
                 if state is not True:  # missing or not ours: never touch
                     return self._send(404, {"error": "not found"})
+                if FIREWALL_IMAGE:
+                    sid = name[len("novacloud-net-"):]
+                    cidr = docker("network", "inspect", "-f", "{{(index .IPAM.Config 0).Subnet}}", name).stdout.strip()
+                    if cidr:
+                        firewall.remove(docker, FIREWALL_IMAGE, sid, cidr)
                 p = docker("network", "rm", name)
                 return self._send(200, {"ok": True}) if p.returncode == 0 else self._send(409, {"error": "network in use"})
             return self._send(405, {"error": "method not allowed"})

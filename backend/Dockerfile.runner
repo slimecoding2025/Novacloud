@@ -3,6 +3,9 @@ FROM docker:27-cli AS dockercli
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/srv/src
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+# iptables is used only inside short-lived helper containers started from this same image (egress allow-lists).
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends iptables && rm -rf /var/lib/apt/lists/*
 WORKDIR /srv
 COPY src src
 # Non-root. Access to the Docker socket is granted at run time with `group_add` (see docker-compose.yml).

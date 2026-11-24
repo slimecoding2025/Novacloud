@@ -270,8 +270,8 @@ class SqlNetworkStore:
             for r in c.execute(text("SELECT id, organization_id, name, cidr::text AS cidr FROM networks")):
                 nets[str(r.id)] = Network(str(r.id), str(r.organization_id), r.name, r.cidr)
             subs = {}
-            for r in c.execute(text("SELECT id, network_id, organization_id, name, cidr::text AS cidr, host(gateway) AS gw, egress FROM subnets")):
-                s = Subnet(str(r.id), str(r.network_id), str(r.organization_id), r.name, r.cidr, r.gw, r.egress)
+            for r in c.execute(text("SELECT id, network_id, organization_id, name, cidr::text AS cidr, host(gateway) AS gw, egress, egress_allow FROM subnets")):
+                s = Subnet(str(r.id), str(r.network_id), str(r.organization_id), r.name, r.cidr, r.gw, r.egress, list(r.egress_allow))
                 subs[s.id] = s
                 nets[s.network_id].subnets[s.id] = s
             for r in c.execute(text("SELECT subnet_id, host(ip) AS ip, resource_id FROM ip_allocations")):
@@ -285,9 +285,10 @@ class SqlNetworkStore:
 
     def save_subnet(self, s):
         with self.e.begin() as c:
-            c.execute(text("INSERT INTO subnets(id,network_id,organization_id,name,cidr,gateway,egress) "
-                           "VALUES (:i,:n,:o,:name,CAST(:c AS cidr),CAST(:g AS inet),:eg)"),
-                      dict(i=s.id, n=s.network_id, o=s.organization_id, name=s.name, c=s.cidr, g=s.gateway, eg=s.egress))
+            c.execute(text("INSERT INTO subnets(id,network_id,organization_id,name,cidr,gateway,egress,egress_allow) "
+                           "VALUES (:i,:n,:o,:name,CAST(:c AS cidr),CAST(:g AS inet),:eg,:al)"),
+                      dict(i=s.id, n=s.network_id, o=s.organization_id, name=s.name, c=s.cidr, g=s.gateway, eg=s.egress,
+                           al=list(s.egress_allow)))
 
     def save_allocation(self, subnet_id, ip, resource_id):
         with self.e.begin() as c:

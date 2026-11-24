@@ -50,6 +50,7 @@ class NetworkIn(BaseModel):
 
 class SubnetIn(NetworkIn):
     egress: bool = False
+    egress_allow: list[str] = Field(default_factory=list, max_length=16)
 
 
 class AllocIn(BaseModel):
@@ -223,7 +224,7 @@ def delete_network(network_id: str, request: Request, p: Principal = Depends(pri
 
 @router.post("/networks/{network_id}/subnets", status_code=201)
 def create_subnet(network_id: str, body: SubnetIn, request: Request, p: Principal = Depends(principal), c=Depends(container)):
-    s = c.network.create_subnet(p, network_id, body.name, body.cidr, cid(request), body.egress)
+    s = c.network.create_subnet(p, network_id, body.name, body.cidr, cid(request), body.egress, body.egress_allow)
     return {k: v for k, v in asdict(s).items() if k != "allocations"}
 
 

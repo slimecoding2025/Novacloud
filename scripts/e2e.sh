@@ -110,6 +110,31 @@ for sid in "$SE" "$SI"; do for _ in $(seq 1 15); do
   [ "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -H "X-CSRF-Token: $CSRF" -X DELETE "$API/api/v1/networks/$NET2/subnets/$sid")" = 204 ] && break; sleep 1; done; done
 req -X DELETE "$API/api/v1/networks/$NET2" >/dev/null
 
+step "egress allow-list is enforced"
+NET3=$(req -X POST "$API/api/v1/networks" -H 'Content-Type: application/json' -d '{"name":"net-e2e-allow","cidr":"10.79.0.0/16"}' | jq -r .id)
+SW=$(req -X POST "$API/api/v1/networks/$NET3/subnets" -H 'Content-Type: application/json' -d '{"name":"sub-allow","cidr":"10.79.1.0/24","egress":true,"egress_allow":["1.1.1.1/32"]}' | jq -r .id)
+SF=$(req -X POST "$API/api/v1/networks/$NET3/subnets" -H 'Content-Type: application/json' -d '{"name":"sub-free","cidr":"10.79.2.0/24","egress":true}' | jq -r .id)
+code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -H "X-CSRF-Token: $CSRF" -X POST "$API/api/v1/networks/$NET3/subnets" -H 'Content-Type: application/json' \
+  -d '{"name":"sub-bad","cidr":"10.79.3.0/24","egress":true,"egress_allow":["169.254.169.254/32"]}')
+[ "$code" -ge 400 ] || fail "metadata address must not be allow-listable"
+mka() { req -X POST "$API/api/v1/instances" -H 'Content-Type: application/json' -H "Idempotency-Key: e2e-$1" \
+  -d "{\"name\":\"$1\",\"template\":\"alpine-small\",\"network_id\":\"$NET3\",\"subnet_id\":\"$2\"}" | jq -r .instance.id; }
+AL=$(mka allow-e2e "$SW"); FR=$(mka free-e2e "$SF")
+wait_state "$AL" running; wait_state "$FR" running
+reach() { docker exec "novacloud-$1" nc -z -w 4 "$2" 80 >/dev/null 2>&1; }
+for _ in $(seq 1 10); do reach "$FR" 1.0.0.1 && break; sleep 2; done
+reach "$FR" 1.0.0.1 || fail "egress subnet without allow-list cannot reach the internet"
+reach "$AL" 1.1.1.1 || fail "allow-listed destination is unreachable"
+if reach "$AL" 1.0.0.1; then fail "destination outside the allow-list was reachable"; fi
+for pair in "$AL:allow-e2e" "$FR:free-e2e"; do
+  req -X DELETE "$API/api/v1/instances/${pair%%:*}?confirm_name=${pair#*:}" -H "Idempotency-Key: e2e-del-${pair#*:}" >/dev/null
+done
+wait_state "$AL" deleted; wait_state "$FR" deleted
+for sid in "$SW" "$SF"; do for _ in $(seq 1 15); do
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -H "X-CSRF-Token: $CSRF" -X DELETE "$API/api/v1/networks/$NET3/subnets/$sid")" = 204 ] && break; sleep 1; done; done
+req -X DELETE "$API/api/v1/networks/$NET3" >/dev/null
+if sudo iptables -S 2>/dev/null | grep -q "NOVA-"; then fail "firewall chain left behind after subnet deletion"; fi
+
 step "audit chain verifies"
 req "$API/api/v1/audit/verify" | jq -e '.valid == true' >/dev/null || fail "audit chain invalid"
 

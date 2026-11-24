@@ -9,6 +9,7 @@ class FakeComputeProvider:
         self.attachments: dict[str, tuple[str, str] | None] = {}
         self.subnets: dict[str, tuple[str, str]] = {}
         self.egress: dict[str, bool] = {}
+        self.allow: dict[str, list[str]] = {}
         self.published: dict[str, int | None] = {}
         self.fail_next: str | None = None
 
@@ -42,10 +43,11 @@ class FakeComputeProvider:
         return self.containers.get(ref)
 
     # network port
-    def create_subnet(self, subnet_id, cidr, gateway, egress=False):
+    def create_subnet(self, subnet_id, cidr, gateway, egress=False, egress_allow=None):
         self._maybe_fail("create_subnet")
         self.subnets[subnet_id] = (cidr, gateway)
         self.egress[subnet_id] = egress
+        self.allow[subnet_id] = list(egress_allow or [])
 
     def delete_subnet(self, subnet_id):
         self._maybe_fail("delete_subnet")

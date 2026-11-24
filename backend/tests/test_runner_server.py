@@ -35,6 +35,8 @@ class FakeDocker:
         if cmd == "network":
             sub, name = args[1], args[-1]
             if sub == "inspect":
+                if name in self.networks and any("IPAM" in a for a in args):
+                    return ok("10.0.1.0/24")
                 if name in self.networks:
                     return ok("true" if self.networks[name] else "")
                 return ok("") if name in self.unmanaged else bad
@@ -46,6 +48,14 @@ class FakeDocker:
             if sub == "rm":
                 self.networks.pop(name, None)
                 return ok()
+        if cmd == "run" and "--rm" in args:  # firewall helper container; `-C` (rule check) says "absent" first
+            inserted = sum(1 for c in self.calls if c[0] == "run" and "-I" in c)
+            deleted = sum(1 for c in self.calls if c[0] == "run" and "-D" in c)
+            if "-C" in args:
+                return bad if not inserted else ok()
+            if "-D" in args:  # like iptables: succeeds once per inserted jump, then "rule does not exist"
+                return ok() if deleted <= inserted else bad
+            return ok()
         if cmd == "run":
             self.running[args[args.index("--name") + 1]] = True
             return ok()
@@ -168,3 +178,32 @@ def test_egress_flag_controls_internal_and_published_port_is_loopback(runner):
     assert "127.0.0.1:20080:8080" in run
     bad = dict(body, instance_id="b" * 8 + ID[8:], network={"subnet_id": SUB, "ip": "10.0.1.6", "published_port": 80})
     assert call("POST", "/v1/containers", bad)[0] == 400
+
+
+def test_allowlist_builds_chain_in_helper_containers_and_cleans_up(runner, monkeypatch):
+    monkeypatch.setattr(server, "FIREWALL_IMAGE", "novacloud-runner:local")
+    call, fake = runner
+    code, _ = call("POST", "/v1/networks", {"subnet_id": SUB, "cidr": "10.0.1.0/24", "gateway": "10.0.1.1",
+                                            "egress": True, "egress_allow": ["93.184.216.0/24", "1.1.1.1/32"]})
+    assert code == 200
+    ipt = [c for c in fake.calls if c[0] == "run" and "iptables" in c]
+    flat = [" ".join(c[c.index("iptables") + 3:]) for c in ipt]
+    ch = "NOVA-" + SUB.replace("-", "")[:20]
+    assert f"-A {ch} -d 93.184.216.0/24 -j RETURN" in flat and f"-A {ch} -d 1.1.1.1/32 -j RETURN" in flat
+    assert flat.index(f"-A {ch} -j DROP") > flat.index(f"-A {ch} -d 1.1.1.1/32 -j RETURN")
+    assert any(f.startswith("-I DOCKER-USER 1 -s 10.0.1.0/24 ! -d 10.0.1.0/24") for f in flat)
+    assert all("--network host" in " ".join(c) and "--cap-drop ALL" in " ".join(c) for c in ipt)
+    fake.calls.clear()
+    assert call("DELETE", f"/v1/networks/{NET}")[0] == 200
+    cleanup = [" ".join(c[c.index("iptables") + 3:]) for c in fake.calls if c[0] == "run"]
+    assert f"-F {ch}" in cleanup and f"-X {ch}" in cleanup
+
+
+def test_allowlist_is_validated_and_needs_egress(runner, monkeypatch):
+    monkeypatch.setattr(server, "FIREWALL_IMAGE", "novacloud-runner:local")
+    call, fake = runner
+    base = {"subnet_id": SUB, "cidr": "10.0.1.0/24", "gateway": "10.0.1.1"}
+    for allow in (["127.0.0.0/8"], ["169.254.169.254/32"], ["0.0.0.0/0"], ["8.8.8.8; reboot"], ["8.8.8.0/24"] * 20):
+        assert call("POST", "/v1/networks", dict(base, egress=True, egress_allow=allow))[0] == 400
+    assert call("POST", "/v1/networks", dict(base, egress=False, egress_allow=["8.8.8.0/24"]))[0] == 400
+    assert not [c for c in fake.calls if c[:2] == ("network", "create")]

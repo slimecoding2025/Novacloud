@@ -50,8 +50,10 @@ services:
 
   runner:
     build: { context: ./backend, dockerfile: Dockerfile.runner }
+    image: novacloud-runner:local   # also the helper image for per-subnet egress allow-lists (iptables, NET_ADMIN, host netns)
     environment:
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN}
+      RUNNER_FIREWALL_IMAGE: novacloud-runner:local
     user: "10002"
     group_add: ["${DOCKER_GID:-999}"]   # group owning /var/run/docker.sock on the host: stat -c %g /var/run/docker.sock
     volumes: ["/var/run/docker.sock:/var/run/docker.sock"]   # ONLY the runner gets the socket (ADR-0003)
