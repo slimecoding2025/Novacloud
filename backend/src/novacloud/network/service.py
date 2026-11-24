@@ -43,13 +43,19 @@ class Subnet:
 class NetworkService:
     def __init__(self, iam, audit, max_networks: int = 10, store=None, provider=None):
         """`store` (optional) persists every mutation (write-through) and is loaded once at start-up.
-        With several API replicas each keeps its own cache; run a single API replica until networks
-        move to read-through queries."""
+        State is re-read from the store before every operation, so the API and worker processes agree."""
         self.iam, self.audit, self.max_networks, self.store = iam, audit, max_networks, store
         self.provider = provider  # optional NetworkProvider: create_subnet(id, cidr, gw) / delete_subnet(id)
         self.networks: dict[str, Network] = store.load() if store else {}
 
+    def _sync(self) -> None:
+        """Read-through: the API and the worker are separate processes sharing one database, so the
+        persisted state (not a start-up snapshot) is authoritative before every decision."""
+        if self.store:
+            self.networks = self.store.load()
+
     def _net(self, p, nid) -> Network:
+        self._sync()
         n = self.networks.get(nid)
         if n is None or n.organization_id != p.organization_id:
             raise NotFound("network not found")
@@ -60,6 +66,7 @@ class NetworkService:
         if not NAME_RE.match(name or ""):
             raise InvalidInput("invalid network name")
         net = parse_private_cidr(cidr)
+        self._sync()
         mine = [n for n in self.networks.values() if n.organization_id == p.organization_id]
         if len(mine) >= self.max_networks:
             raise Conflict("network quota reached")
@@ -122,6 +129,7 @@ class NetworkService:
 
     def release_ip(self, organization_id: str, network_id: str, subnet_id: str, resource_id: str) -> None:
         """System operation (no principal): called when the resource that owned the address is deleted."""
+        self._sync()
         net = self.networks.get(network_id)
         sub = net.subnets.get(subnet_id) if net and net.organization_id == organization_id else None
         if sub is None:
@@ -163,4 +171,5 @@ class NetworkService:
 
     def list_networks(self, p: Principal) -> list[Network]:
         self.iam.require(p, "network:read", "network")
+        self._sync()
         return [n for n in self.networks.values() if n.organization_id == p.organization_id]

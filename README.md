@@ -112,7 +112,7 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 
 - The console has been built and type-checked but not exercised in a browser (the e2e test only checks that it is served with a CSP and proxies the API).
 - Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Subnets are internal-only: no outbound internet, no published ports.
-- Networks are cached per API process: run a single API replica. Rate limiting is also per process.
+- Network state is re-read from PostgreSQL before every operation (API and worker agree). Rate limiting is still per process, so it is per replica.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.
 - GitHub Actions are referenced by version tag, not commit SHA; Dependabot (minor/patch updates only) keeps them current. `npm audit` ignores dev-only advisories (Vite/esbuild dev server).
 - Dependency licenses still need a formal review ([docs/dependencies.md](docs/dependencies.md)). Grafana is AGPL-licensed.

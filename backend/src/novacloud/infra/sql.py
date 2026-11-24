@@ -13,7 +13,6 @@ from novacloud.iam.domain import SessionRecord
 from novacloud.orchestration.domain import Job
 from novacloud.storage.service import ObjectMeta
 
-
 _INST_SELECT = "SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances "
 
 
@@ -255,7 +254,7 @@ class SqlObjectRepository:
 
 
 class SqlNetworkStore:
-    """Write-through persistence for NetworkService (see its docstring for the caching caveat)."""
+    """Persistence for NetworkService: write-through, and load() is re-run before each operation."""
 
     def __init__(self, engine):
         self.e = engine
