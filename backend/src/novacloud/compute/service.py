@@ -42,6 +42,9 @@ class InMemoryInstanceRepository:
     def save(self, i):
         self.items[i.id] = i
 
+    def port_taken(self, port):
+        return any(x.published_port == port for x in self.items.values())
+
     def count_active(self, organization_id):
         return len(self.list(organization_id))
 
@@ -58,10 +61,11 @@ class ComputeService:
 
     # -- API-facing (authorized, tenant-scoped); work is done asynchronously by the worker ----------
     def create_instance(self, p: Principal, name: str, template: str, idempotency_key: str, cid="",
-                        network_id: str | None = None, subnet_id: str | None = None) -> tuple[Instance, Job]:
+                        network_id: str | None = None, subnet_id: str | None = None,
+                        published_port: int | None = None) -> tuple[Instance, Job]:
         self.iam.require(p, "instance:create", "instance", "-", cid)
         validate_name(name)
-        get_template(template)
+        tpl = get_template(template)
         if not idempotency_key or len(idempotency_key) > 128:
             raise InvalidInput("Idempotency-Key header is required (max 128 chars)")
         existing = self._job_for_key(p.organization_id, idempotency_key)
@@ -76,6 +80,17 @@ class ComputeService:
             raise InvalidInput("network_id and subnet_id must be given together")
         if subnet_id and self.network is None:
             raise InvalidInput("networking is not enabled")
+        if published_port is not None:
+            if type(published_port) is not int or not 20000 <= published_port <= 29999:
+                raise InvalidInput("published_port must be between 20000 and 29999")
+            if tpl.port is None:
+                raise InvalidInput("this template exposes no port")
+            if not subnet_id or not network_id:
+                raise InvalidInput("a published port needs a subnet")
+            if not self.network.subnet_egress(p, network_id, subnet_id):
+                raise InvalidInput("publishing a port needs a subnet with egress enabled (Docker cannot publish on internal networks)")
+            if self.repo.port_taken(published_port):
+                raise Conflict("host port already in use")
         inst = Instance(str(uuid.uuid4()), p.organization_id, name, template, State.PLANNED)
         self.repo.add(inst)
         if subnet_id and network_id:
@@ -85,13 +100,13 @@ class ComputeService:
                 inst.state = State.DELETED  # planned -> deleted: nothing was provisioned
                 self.repo.save(inst)
                 raise
-            inst.network_id, inst.subnet_id = network_id, subnet_id
+            inst.network_id, inst.subnet_id, inst.published_port = network_id, subnet_id, published_port
             self.repo.save(inst)
         job, _ = self.jobs.enqueue(new_job(p.organization_id, "instance.create",
                                            {"instance_id": inst.id}, idempotency_key))
         self.audit.record(actor_id=p.user_id, organization_id=p.organization_id, action="instance.create",
                           resource_type="instance", resource_id=inst.id, correlation_id=cid,
-                          metadata={"name": name, "template": template, "ip": inst.ip})
+                          metadata={"name": name, "template": template, "ip": inst.ip, "published_port": published_port})
         return inst, job
 
     def _job_for_key(self, org, key):
@@ -133,7 +148,7 @@ class ComputeService:
 
     @staticmethod
     def _attachment(inst: Instance) -> NetworkAttachment | None:
-        return NetworkAttachment(inst.subnet_id, inst.ip) if inst.subnet_id and inst.ip else None
+        return NetworkAttachment(inst.subnet_id, inst.ip, inst.published_port) if inst.subnet_id and inst.ip else None
 
     def _load(self, job: Job) -> Instance:
         inst = self.repo.get(job.organization_id, job.payload["instance_id"])
@@ -200,7 +215,7 @@ class ComputeService:
         if inst.subnet_id and inst.network_id and self.network:
             self.network.release_ip(inst.organization_id, inst.network_id, inst.subnet_id, inst.id)
             # the address is free again; drop the reference so the subnet can be deleted (history lives in the audit log)
-            inst.network_id = inst.subnet_id = inst.ip = None
+            inst.network_id = inst.subnet_id = inst.ip = inst.published_port = None
             self.repo.save(inst)
         return {"state": "deleted"}
 

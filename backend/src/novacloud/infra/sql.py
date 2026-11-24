@@ -13,7 +13,7 @@ from novacloud.iam.domain import SessionRecord
 from novacloud.orchestration.domain import Job
 from novacloud.storage.service import ObjectMeta
 
-_INST_SELECT = "SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip FROM instances "
+_INST_SELECT = "SELECT id,organization_id,name,template,state,provider_ref,error,network_id,subnet_id,host(ip) AS ip,published_port FROM instances "
 
 
 def make_engine(url: str):
@@ -127,7 +127,7 @@ class SqlInstanceRepository:
     def _i(r) -> Instance:
         return Instance(str(r.id), str(r.organization_id), r.name, r.template, State(r.state), r.provider_ref, r.error,
                         str(r.network_id) if r.network_id else None, str(r.subnet_id) if r.subnet_id else None,
-                        str(r.ip) if r.ip else None)
+                        str(r.ip) if r.ip else None, r.published_port)
 
     def add(self, i: Instance):
         try:
@@ -148,12 +148,16 @@ class SqlInstanceRepository:
             return [self._i(r) for r in c.execute(text(
                 _INST_SELECT + "WHERE organization_id=:o AND state<>'deleted' ORDER BY created_at"), dict(o=org))]
 
+    def port_taken(self, port: int) -> bool:
+        with self.e.connect() as c:
+            return c.execute(text("SELECT 1 FROM instances WHERE published_port=:p"), dict(p=port)).first() is not None
+
     def save(self, i: Instance):
         with self.e.begin() as c:
             c.execute(text("UPDATE instances SET state=:s, provider_ref=:p, error=:e, network_id=:n, subnet_id=:sn, "
-                           "ip=CAST(:ip AS inet), updated_at=now() WHERE id=:i AND organization_id=:o"),
+                           "ip=CAST(:ip AS inet), published_port=:pp, updated_at=now() WHERE id=:i AND organization_id=:o"),
                       dict(s=i.state.value, p=i.provider_ref, e=i.error, n=i.network_id, sn=i.subnet_id, ip=i.ip,
-                           i=i.id, o=i.organization_id))
+                           pp=i.published_port, i=i.id, o=i.organization_id))
 
     def count_active(self, org):
         with self.e.connect() as c:
@@ -266,8 +270,8 @@ class SqlNetworkStore:
             for r in c.execute(text("SELECT id, organization_id, name, cidr::text AS cidr FROM networks")):
                 nets[str(r.id)] = Network(str(r.id), str(r.organization_id), r.name, r.cidr)
             subs = {}
-            for r in c.execute(text("SELECT id, network_id, organization_id, name, cidr::text AS cidr, host(gateway) AS gw FROM subnets")):
-                s = Subnet(str(r.id), str(r.network_id), str(r.organization_id), r.name, r.cidr, r.gw)
+            for r in c.execute(text("SELECT id, network_id, organization_id, name, cidr::text AS cidr, host(gateway) AS gw, egress FROM subnets")):
+                s = Subnet(str(r.id), str(r.network_id), str(r.organization_id), r.name, r.cidr, r.gw, r.egress)
                 subs[s.id] = s
                 nets[s.network_id].subnets[s.id] = s
             for r in c.execute(text("SELECT subnet_id, host(ip) AS ip, resource_id FROM ip_allocations")):
@@ -281,9 +285,9 @@ class SqlNetworkStore:
 
     def save_subnet(self, s):
         with self.e.begin() as c:
-            c.execute(text("INSERT INTO subnets(id,network_id,organization_id,name,cidr,gateway) "
-                           "VALUES (:i,:n,:o,:name,CAST(:c AS cidr),CAST(:g AS inet))"),
-                      dict(i=s.id, n=s.network_id, o=s.organization_id, name=s.name, c=s.cidr, g=s.gateway))
+            c.execute(text("INSERT INTO subnets(id,network_id,organization_id,name,cidr,gateway,egress) "
+                           "VALUES (:i,:n,:o,:name,CAST(:c AS cidr),CAST(:g AS inet),:eg)"),
+                      dict(i=s.id, n=s.network_id, o=s.organization_id, name=s.name, c=s.cidr, g=s.gateway, eg=s.egress))
 
     def save_allocation(self, subnet_id, ip, resource_id):
         with self.e.begin() as c:

@@ -154,3 +154,17 @@ def test_container_needs_an_existing_managed_network(runner):
     assert call("POST", "/v1/containers", body) == (200, {"ref": NAME})
     run = [c for c in fake.calls if c[0] == "run"][0]
     assert NET in run and "10.0.1.5" in run and "none" not in run
+
+
+def test_egress_flag_controls_internal_and_published_port_is_loopback(runner):
+    call, fake = runner
+    call("POST", "/v1/networks", {"subnet_id": SUB, "cidr": "10.0.1.0/24", "gateway": "10.0.1.1", "egress": True})
+    create = [c for c in fake.calls if c[:2] == ("network", "create")][0]
+    assert "--internal" not in create
+    body = {"instance_id": ID, "organization_id": ID, "template": "nginx-small",
+            "network": {"subnet_id": SUB, "ip": "10.0.1.5", "published_port": 20080}}
+    assert call("POST", "/v1/containers", body) == (200, {"ref": NAME})
+    run = [c for c in fake.calls if c[0] == "run"][0]
+    assert "127.0.0.1:20080:8080" in run
+    bad = dict(body, instance_id="b" * 8 + ID[8:], network={"subnet_id": SUB, "ip": "10.0.1.6", "published_port": 80})
+    assert call("POST", "/v1/containers", bad)[0] == 400

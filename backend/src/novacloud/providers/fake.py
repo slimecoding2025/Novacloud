@@ -8,6 +8,8 @@ class FakeComputeProvider:
         self.containers: dict[str, str] = {}
         self.attachments: dict[str, tuple[str, str] | None] = {}
         self.subnets: dict[str, tuple[str, str]] = {}
+        self.egress: dict[str, bool] = {}
+        self.published: dict[str, int | None] = {}
         self.fail_next: str | None = None
 
     def _maybe_fail(self, op):
@@ -20,6 +22,7 @@ class FakeComputeProvider:
         ref = f"fake-{instance_id}"
         self.containers[ref] = "running"
         self.attachments[ref] = (network.subnet_id, network.ip) if network else None
+        self.published[ref] = network.published_port if network else None
         return ref
 
     def start(self, ref):
@@ -39,9 +42,10 @@ class FakeComputeProvider:
         return self.containers.get(ref)
 
     # network port
-    def create_subnet(self, subnet_id, cidr, gateway):
+    def create_subnet(self, subnet_id, cidr, gateway, egress=False):
         self._maybe_fail("create_subnet")
         self.subnets[subnet_id] = (cidr, gateway)
+        self.egress[subnet_id] = egress
 
     def delete_subnet(self, subnet_id):
         self._maybe_fail("delete_subnet")

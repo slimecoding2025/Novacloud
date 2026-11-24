@@ -30,18 +30,23 @@ def validate_net_ref(ref: str) -> str:
     return ref
 
 
-def build_network_args(subnet_id: str, cidr: str, gateway: str) -> list[str]:
-    """Private IPv4 bridge, --internal: members reach each other but not the outside world or other bridges."""
+PUBLISH_MIN, PUBLISH_MAX = 20000, 29999
+
+
+def build_network_args(subnet_id: str, cidr: str, gateway: str, egress: bool = False) -> list[str]:
+    """Private IPv4 bridge. Default --internal: members reach each other but not the outside world.
+    egress=True drops --internal (outbound NAT); bridges stay isolated from each other either way."""
     net = ipaddress.IPv4Network(cidr, strict=True)
     gw = ipaddress.IPv4Address(gateway)
     if not net.is_private or gw not in net or not (8 <= net.prefixlen <= 29):
         raise ValueError("invalid subnet definition")
-    return ["docker", "network", "create", "--driver", "bridge", "--internal", "--label", LABEL,
+    return ["docker", "network", "create", "--driver", "bridge", *([] if egress else ["--internal"]), "--label", LABEL,
             "--subnet", str(net), "--gateway", str(gw), network_name(subnet_id)]
 
 
 def build_run_args(instance_id: str, organization_id: str, template: str,
-                   network: str | None = None, ip: str | None = None) -> list[str]:
+                   network: str | None = None, ip: str | None = None,
+                   published_port: int | None = None) -> list[str]:
     if template not in TEMPLATES:
         raise ValueError("unknown template")
     if not ID_RE.match(organization_id):
@@ -49,7 +54,13 @@ def build_run_args(instance_id: str, organization_id: str, template: str,
     t = TEMPLATES[template]
     if network is not None:
         net_args = ["--network", network_name(network), "--ip", str(ipaddress.IPv4Address(ip or ""))]
+        if published_port is not None:
+            if t.port is None or type(published_port) is not int or not PUBLISH_MIN <= published_port <= PUBLISH_MAX:
+                raise ValueError("invalid published port")
+            net_args += ["--publish", f"127.0.0.1:{int(published_port)}:{t.port}"]  # loopback only, never 0.0.0.0
     else:
+        if published_port is not None:
+            raise ValueError("a published port needs a network")
         net_args = ["--network", "none"]
     return [
         "docker", "run", "-d", "--name", container_name(instance_id),

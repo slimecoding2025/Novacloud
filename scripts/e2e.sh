@@ -88,6 +88,28 @@ del_subnet "$SA"; del_subnet "$SB"
 docker network inspect "novacloud-net-$SA" >/dev/null 2>&1 && fail "docker network not removed with subnet"
 req -X DELETE "$API/api/v1/networks/$NET" >/dev/null
 
+step "egress policy and published ports"
+NET2=$(req -X POST "$API/api/v1/networks" -H 'Content-Type: application/json' -d '{"name":"net-e2e-out","cidr":"10.78.0.0/16"}' | jq -r .id)
+SE=$(req -X POST "$API/api/v1/networks/$NET2/subnets" -H 'Content-Type: application/json' -d '{"name":"sub-out","cidr":"10.78.1.0/24","egress":true}' | jq -r .id)
+SI=$(req -X POST "$API/api/v1/networks/$NET2/subnets" -H 'Content-Type: application/json' -d '{"name":"sub-in","cidr":"10.78.2.0/24"}' | jq -r .id)
+[ "$(docker network inspect -f '{{.Internal}}' "novacloud-net-$SE")" = false ] || fail "egress subnet should not be internal"
+[ "$(docker network inspect -f '{{.Internal}}' "novacloud-net-$SI")" = true ] || fail "default subnet should stay internal"
+mkp() { curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -H "X-CSRF-Token: $CSRF" -X POST "$API/api/v1/instances" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: e2e-$1" -d "{\"name\":\"$1\",\"template\":\"nginx-small\",\"network_id\":\"$NET2\",\"subnet_id\":\"$2\",\"published_port\":$3}"; }
+[ "$(mkp pub-bad "$SI" 20081)" -ge 400 ] || fail "publishing on an internal subnet must be refused"
+[ "$(mkp pub-e2e "$SE" 20080)" = 202 ] || fail "publishing on an egress subnet should be accepted"
+PUB=$(req "$API/api/v1/instances" | jq -r '.[]|select(.name=="pub-e2e").id')
+wait_state "$PUB" running
+for _ in $(seq 1 15); do curl -fsS http://127.0.0.1:20080 2>/dev/null | grep -qi nginx && break; sleep 2; done
+curl -fsS http://127.0.0.1:20080 | grep -qi nginx || fail "published port not reachable on loopback"
+[ "$(docker inspect -f '{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostIp}}' "novacloud-$PUB")" = 127.0.0.1 ] || fail "port not bound to loopback only"
+[ "$(mkp pub-dup "$SE" 20080)" = 409 ] || fail "a host port already in use must be refused with 409"
+req -X DELETE "$API/api/v1/instances/$PUB?confirm_name=pub-e2e" -H "Idempotency-Key: e2e-del-pub" >/dev/null
+wait_state "$PUB" deleted
+for sid in "$SE" "$SI"; do for _ in $(seq 1 15); do
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -H "X-CSRF-Token: $CSRF" -X DELETE "$API/api/v1/networks/$NET2/subnets/$sid")" = 204 ] && break; sleep 1; done; done
+req -X DELETE "$API/api/v1/networks/$NET2" >/dev/null
+
 step "audit chain verifies"
 req "$API/api/v1/audit/verify" | jq -e '.valid == true' >/dev/null || fail "audit chain invalid"
 

@@ -83,7 +83,7 @@ Legend: **Tested** = automated test executed during development; **Written** = i
 ## Remaining gaps
 
 - The runner is verified only at configuration level on a real daemon; no escape testing or review has been done.
-- Subnet bridges are `--internal`: members can talk to each other and nothing else. Isolation between subnets relies on Docker's bridge rules and is tested in CI only for the cases in `scripts/e2e.sh`; it is not a substitute for a security review.
+- Subnet bridges are `--internal` unless the subnet is created with `egress: true` (outbound NAT, chosen explicitly and audited); published ports bind `127.0.0.1` only, never `0.0.0.0`. Members can talk to each other and, with egress, to the internet. Isolation between subnets relies on Docker's bridge rules and is tested in CI only for the cases in `scripts/e2e.sh`; it is not a substitute for a security review.
 - Rate limiting is in-process.
 - Registration is open unless `REGISTRATION_ENABLED=false`.
 - No TLS termination is provided; run behind a reverse proxy and set `COOKIE_SECURE=true`.

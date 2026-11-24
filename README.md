@@ -38,7 +38,7 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 | Compute: instance state machine, jobs, idempotency, reconciliation | Yes | Unit-tested |
 | Runner (only component touching Docker) and Docker adapter | Yes | Handler unit-tested; end-to-end in CI against real Docker (container created, hardened flags confirmed with `docker inspect`, deleted) |
 | Storage: local object store, quotas, path-traversal protection | Yes | Unit-tested |
-| Network: networks, subnets (each a real internal Docker bridge), IP allocation, overlap checks, instance attachment | Yes | Unit-tested; SQL checked on PostgreSQL; isolation verified in CI (see below) |
+| Network: networks, subnets (each a real internal Docker bridge), IP allocation, overlap checks, instance attachment, outbound policy, loopback-published ports | Yes | Unit-tested; SQL checked on PostgreSQL; isolation verified in CI (see below) |
 | Monitoring: Prometheus metrics with documented sources, Grafana provisioning | Yes | Metrics unit-tested |
 | HTTP API (FastAPI) | Yes | 8 HTTP-level tests pass in CI (auth, CSRF, IDOR, limits, metrics, error hygiene) |
 | Web console (React/TypeScript): overview dashboard, instances, jobs, objects, networks, audit, members; light/dark theme | Yes | Type-checked and built in CI; not exercised in a browser |
@@ -52,7 +52,7 @@ Test suite in CI: unit, HTTP, runner and real-PostgreSQL tests plus the `scripts
 - **Instances** are containers launched from allow-listed templates only; lifecycle `planned → provisioning → running → stopping → stopped → deleting → deleted` (plus `failed`). `running` is set only after the provider confirms it; a reconciliation loop detects drift. Deletion requires typing the instance name.
 - **Jobs** in PostgreSQL (`FOR UPDATE SKIP LOCKED`), idempotency keys per organization, no automatic retry for destructive operations, execution plans with compensation.
 - **Object storage** addressed by generated IDs, size limits, per-organization quota.
-- **Networking:** private IPv4 CIDRs, subnet containment, overlap detection and IP allocation. Every subnet becomes an **internal Docker bridge**; an instance can be attached to a subnet with an allocated address. Instances in the same subnet reach each other; other subnets and the internet are unreachable (CI proves this with real containers). Instances without a subnet run with no network at all.
+- **Networking:** private IPv4 CIDRs, subnet containment, overlap detection and IP allocation. Every subnet becomes a **Docker bridge**, **internal by default** (no route out); an instance can be attached to a subnet with an allocated address. Instances in the same subnet reach each other; other subnets and the internet are unreachable (CI proves this with real containers). A subnet created with `egress: true` gets outbound NAT, and an `nginx-small` instance in such a subnet can publish one host port (20000-29999), bound to `127.0.0.1` only. Instances without a subnet run with no network at all.
 - **Observability:** JSON logs with secret redaction, correlation IDs, `/health`, `/ready` (real database check), `/metrics`.
 
 ## Architecture
@@ -111,7 +111,7 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 ## Known limitations
 
 - Browser tests cover every console page except Jobs and Overview (both are read-only views).
-- Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Subnets are internal-only: no outbound internet, no published ports.
+- Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Published ports exist only on egress subnets (Docker cannot publish from internal networks), one per instance, loopback only; exposing them beyond the host is left to your own reverse proxy.
 - Network state is re-read from PostgreSQL before every operation (API and worker agree). Rate limiting is still per process, so it is per replica.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.
 - GitHub Actions are referenced by version tag, not commit SHA; Dependabot (minor/patch updates only) keeps them current. `npm audit` ignores dev-only advisories (Vite/esbuild dev server).
