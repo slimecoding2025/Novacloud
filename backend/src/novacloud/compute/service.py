@@ -199,6 +199,9 @@ class ComputeService:
         self._set(inst, State.DELETED)
         if inst.subnet_id and inst.network_id and self.network:
             self.network.release_ip(inst.organization_id, inst.network_id, inst.subnet_id, inst.id)
+            # the address is free again; drop the reference so the subnet can be deleted (history lives in the audit log)
+            inst.network_id = inst.subnet_id = inst.ip = None
+            self.repo.save(inst)
         return {"state": "deleted"}
 
     # -- reconciliation: recorded state vs provider state ---------------------------------------------
