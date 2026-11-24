@@ -44,7 +44,7 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 | Web console (React/TypeScript): overview dashboard, instances, jobs, objects, networks, audit, members; light/dark theme | Yes | Type-checked and built in CI; not exercised in a browser |
 | CI (GitHub Actions), Dependabot, security policy | Yes | Green: ruff, mypy, bandit, pip-audit, pytest on PostgreSQL 16, Alembic upgrade/downgrade, npm typecheck/build/audit, gitleaks, hadolint, trivy, compose validation |
 
-Test suite in CI: unit, HTTP, runner and real-PostgreSQL tests plus the `scripts/e2e.sh` end-to-end run (containers, hardening flags, same-subnet connectivity, cross-subnet isolation).
+Test suite in CI: unit, HTTP, runner and real-PostgreSQL tests plus the `scripts/e2e.sh` end-to-end run (containers, hardening flags, same-subnet connectivity, cross-subnet isolation) and Playwright browser tests of the console (`ui-tests/`: sign-in, instance lifecycle, audit log, sign-out).
 
 ## Features
 
@@ -100,7 +100,7 @@ Open the console, choose **Create an organization**; the first user is the `owne
 
 > **Hosting:** the full stack needs Docker and PostgreSQL, so it cannot run on Vercel-style static/serverless hosts (a frontend-only deployment shows the sign-in page but cannot sign in). See *Where can it run for free?* in [docs/development.md](docs/development.md).
 
-Run the end-to-end test against a running stack with `./scripts/e2e.sh` (needs `curl`, `jq`, Docker).
+Run the end-to-end test against a running stack with `./scripts/e2e.sh` (needs `curl`, `jq`, Docker). Browser tests: `cd ui-tests && npm install && npx playwright install chromium && npx playwright test` (stack on `http://localhost:8080`, or set `WEB_URL`).
 
 Run the tests: `cd backend && pip install -r requirements-dev.txt && pytest` — set `PGHOST`/`PGUSER`/`PGPASSWORD` to include the real-PostgreSQL tests. Full instructions: [docs/development.md](docs/development.md).
 
@@ -110,7 +110,7 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 
 ## Known limitations
 
-- The console has been built and type-checked but not exercised in a browser (the e2e test only checks that it is served with a CSP and proxies the API).
+- Browser tests cover the main console flows (sign-in, instance lifecycle, audit, sign-out); Networks, Objects and Members pages are not yet covered.
 - Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Subnets are internal-only: no outbound internet, no published ports.
 - Network state is re-read from PostgreSQL before every operation (API and worker agree). Rate limiting is still per process, so it is per replica.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.

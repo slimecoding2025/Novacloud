@@ -88,6 +88,19 @@ jobs:
           docker compose up -d --build
       - name: End-to-end test (real Docker, PostgreSQL, runner, worker)
         run: ./scripts/e2e.sh
+      - name: Browser tests (Playwright against the real console)
+        working-directory: ui-tests
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: ui-tests/test-results
+          if-no-files-found: ignore
       - name: Diagnostics on failure
         if: failure()
         run: docker compose ps -a && docker compose logs --tail=80
