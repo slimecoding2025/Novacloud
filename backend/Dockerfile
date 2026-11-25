@@ -9,5 +9,4 @@ COPY src src
 RUN useradd --system --uid 10001 --home /srv novacloud && mkdir -p /data/objects && chown -R novacloud /data
 USER novacloud
 EXPOSE 8000
-CMD ["uvicorn", "--factory", "novacloud.api.app:app_factory", "--host", "0.0.0.0", "--port", "8000",
-     "--proxy-headers", "--forwarded-allow-ips", "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"]
+CMD ["uvicorn", "--factory", "novacloud.api.app:app_factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"]
