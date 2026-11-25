@@ -33,7 +33,7 @@ NOVACLOUD lets developers, sysadmins, labs and small organizations manage infras
 
 | Area | Implemented | Verification |
 |---|---|---|
-| Identity: organizations, users, roles, sessions, CSRF, rate limiting | Yes | Unit-tested |
+| Identity: organizations, users, roles, sessions, CSRF, rate limiting (shared across replicas) | Yes | Unit-tested; shared limiter tested on PostgreSQL in CI |
 | Audit log: hash-chained, append-only (DB triggers + restricted role) | Yes | Unit-tested and tested on real PostgreSQL 16 |
 | Compute: instance state machine, jobs, idempotency, reconciliation | Yes | Unit-tested |
 | Runner (only component touching Docker) and Docker adapter | Yes | Handler unit-tested; end-to-end in CI against real Docker (container created, hardened flags confirmed with `docker inspect`, deleted) |
@@ -112,7 +112,7 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 
 - Browser tests cover every console page except Jobs and Overview (both are read-only views).
 - Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Published ports exist only on egress subnets (Docker cannot publish from internal networks), one per instance, loopback only; exposing them beyond the host is left to your own reverse proxy.
-- Network state is re-read from PostgreSQL before every operation (API and worker agree). Rate limiting is still per process, so it is per replica.
+- Network state is re-read from PostgreSQL before every operation (API and worker agree). Rate limits (login and API) are counted in PostgreSQL, so every API replica shares one budget; if the database is unreachable the limiter falls back to a per-process limit.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.
 - GitHub Actions are referenced by version tag, not commit SHA; Dependabot (minor/patch updates only) keeps them current. `npm audit` ignores dev-only advisories (Vite/esbuild dev server).
 - Dependency licenses still need a formal review ([docs/dependencies.md](docs/dependencies.md)). Grafana is AGPL-licensed.

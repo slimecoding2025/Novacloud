@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from novacloud.audit.service import AuditService, InMemoryAuditRepository
 from novacloud.compute.service import ComputeService, InMemoryInstanceRepository
 from novacloud.core.config import Settings
-from novacloud.core.ratelimit import RateLimiter
+from novacloud.core.ratelimit import RateLimiter, SharedRateLimiter
 from novacloud.iam.service import IamService, InMemoryIamRepository
 from novacloud.monitoring.metrics import Metric, MetricsRegistry
 from novacloud.network.service import NetworkService
@@ -40,9 +40,11 @@ def _provider(s: Settings):
     return RunnerComputeProvider(s.runner_url, s.runner_token)
 
 
-def _assemble(s, audit_repo, iam_repo, inst_repo, job_repo, obj_repo, provider, ping, hasher, net_store=None) -> Container:
+def _assemble(s, audit_repo, iam_repo, inst_repo, job_repo, obj_repo, provider, ping, hasher, net_store=None,
+              limiter_factory=None) -> Container:
+    make_limiter = limiter_factory or (lambda name, limit: RateLimiter(limit))
     audit = AuditService(audit_repo)
-    iam = IamService(iam_repo, hasher, audit, s.session_ttl_seconds, RateLimiter(s.login_rate_per_minute))
+    iam = IamService(iam_repo, hasher, audit, s.session_ttl_seconds, make_limiter("login", s.login_rate_per_minute))
     network = NetworkService(iam, audit, store=net_store, provider=provider)
     compute = ComputeService(inst_repo, job_repo, provider, iam, audit, s.max_instances_per_org, network=network)
     storage = LocalObjectStore(s.storage_root, obj_repo, iam, audit, s.max_object_bytes, s.org_storage_quota_bytes)
@@ -55,7 +57,7 @@ def _assemble(s, audit_repo, iam_repo, inst_repo, job_repo, obj_repo, provider, 
                       lambda: (ping(), 1)[1]))
     m.counter_metric("novacloud_http_requests_total", "HTTP requests", "API middleware counter", ("method", "status"))
     return Container(s, audit, iam, compute, job_repo, storage, network, m,
-                     RateLimiter(s.api_rate_per_minute), ping)
+                     make_limiter("api", s.api_rate_per_minute), ping)
 
 
 def build(settings: Settings) -> Container:
@@ -71,7 +73,7 @@ def build(settings: Settings) -> Container:
             c.execute(text("SELECT 1"))
     return _assemble(settings, sql.SqlAuditRepository(e), sql.SqlIamRepository(e), sql.SqlInstanceRepository(e),
                      sql.SqlJobRepository(e), sql.SqlObjectRepository(e), _provider(settings), ping, Argon2Hasher(),
-                     sql.SqlNetworkStore(e))
+                     sql.SqlNetworkStore(e), lambda name, limit: SharedRateLimiter(e, name, limit))
 
 
 def build_in_memory(settings: Settings, provider, hasher) -> Container:

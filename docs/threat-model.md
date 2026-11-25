@@ -84,7 +84,7 @@ Legend: **Tested** = automated test executed during development; **Written** = i
 
 - The runner is verified only at configuration level on a real daemon; no escape testing or review has been done.
 - Subnet bridges are `--internal` unless the subnet is created with `egress: true` (outbound NAT, chosen explicitly and audited); published ports bind `127.0.0.1` only, never `0.0.0.0`. Members can talk to each other and, with egress, to the internet or only to an explicit allow-list. The allow-list is enforced by host iptables rules written by the runner through helper containers: this adds NET_ADMIN-on-host-network capability to what the runner (already Docker-socket-equivalent to root) can do; allow-lists are IPv4 only, filter by address not by DNS name, and do not restrict traffic from containers to the bridge gateway (host services). Isolation between subnets relies on Docker's bridge rules and is tested in CI only for the cases in `scripts/e2e.sh`; it is not a substitute for a security review.
-- Rate limiting is in-process.
+- Rate limiting is a fixed window (a burst of up to twice the limit is possible across a window boundary) counted per client IP / login key; the API trusts `X-Forwarded-For` only from private address ranges (the compose network, where nginx overwrites it with the real client address); a client that can reach the API port directly from a private range could spoof it, which is why the API port is published on loopback only. If PostgreSQL is unreachable it degrades to a per-process limit.
 - Registration is open unless `REGISTRATION_ENABLED=false`.
 - No TLS termination is provided; run behind a reverse proxy and set `COOKIE_SECURE=true`.
 - Audit anchoring outside the database is not implemented.
