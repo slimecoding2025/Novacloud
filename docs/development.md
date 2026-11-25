@@ -49,7 +49,7 @@ Lint and types: `ruff check src tests`, `mypy`, `bandit -r src`, `pip-audit -r r
 | `METRICS_TOKEN` | empty | `/metrics` returns 404 unless set |
 | `STORAGE_ROOT` | `./data/objects` | Object storage directory |
 | `MAX_OBJECT_BYTES`, `ORG_STORAGE_QUOTA_BYTES`, `MAX_INSTANCES_PER_ORG` | 10 MiB, 1 GiB, 20 | Limits and quotas |
-| `LOGIN_RATE_PER_MINUTE`, `API_RATE_PER_MINUTE` | 10, 300 | In-process rate limits |
+| `LOGIN_RATE_PER_MINUTE`, `API_RATE_PER_MINUTE` | 10, 300 | Shared (PostgreSQL) rate limits |
 
 ## Where can it run for free?
 
