@@ -67,4 +67,4 @@ Files changed, features actually implemented, commands run, test results, known 
 | 5 Monitoring and console | `/metrics` with documented sources and explicit unavailability, Grafana provisioning, React console pages | Metrics unit-tested; console type-checked only |
 | 6 CI and hardening | GitHub Actions (lint, types, tests, audits, secret/container scans), Dependabot, SECURITY.md | Pipeline green on `main`; it found and fixed a vulnerable Starlette pin |
 
-Next smallest verifiable steps: IPv6 and DNS-name based egress rules, and an optional reverse-proxy template for exposing published ports.
+Next smallest verifiable steps: IPv6 and DNS-name based egress rules.

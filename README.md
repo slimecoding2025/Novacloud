@@ -111,7 +111,7 @@ Threat model with per-control implementation status: [docs/threat-model.md](docs
 ## Known limitations
 
 - Browser tests cover every console page except Jobs and Overview (both are read-only views).
-- Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Published ports exist only on egress subnets (Docker cannot publish from internal networks), one per instance, loopback only; exposing them beyond the host is left to your own reverse proxy.
+- Subnet CIDRs must be unique across the whole Docker host (Docker refuses overlapping bridges), even between organizations. Published ports exist only on egress subnets (Docker cannot publish from internal networks), one per instance, loopback only; to expose one beyond the host use the optional Caddy profile (`docker compose --profile proxy up -d proxy`, configured by `PROXY_SITE` / `PROXY_UPSTREAM`, see `deploy/proxy/Caddyfile`; a host name gives automatic TLS).
 - Network state is re-read from PostgreSQL before every operation (API and worker agree). Rate limits (login and API) are counted in PostgreSQL, so every API replica shares one budget; if the database is unreachable the limiter falls back to a per-process limit.
 - No TLS termination is provided; use a reverse proxy and `COOKIE_SECURE=true` outside development.
 - GitHub Actions are referenced by version tag, not commit SHA; Dependabot (minor/patch updates only) keeps them current. `npm audit` ignores dev-only advisories (Vite/esbuild dev server).

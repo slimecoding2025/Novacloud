@@ -1,0 +1,18 @@
+# Optional reverse proxy for instances that publish a host port (see "Published ports" in the README).
+# Published ports are bound to 127.0.0.1 only; this proxy is the single, deliberate way to expose one.
+#
+#   PROXY_SITE   what Caddy serves. A bare ":8081" is plain HTTP; a host name such as "app.example.com"
+#                makes Caddy obtain a TLS certificate automatically (ports 80/443 must be reachable).
+#   PROXY_UPSTREAM  host:port of the published port, e.g. 127.0.0.1:20080
+{
+	admin off
+}
+
+{$PROXY_SITE:http://:8081} {
+	reverse_proxy {$PROXY_UPSTREAM:127.0.0.1:20080}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
