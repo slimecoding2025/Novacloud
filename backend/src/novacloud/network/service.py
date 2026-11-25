@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from novacloud.core.errors import Conflict, InvalidInput, NotFound
+from novacloud.core.netpolicy import validate_egress_allow
 from novacloud.iam.domain import Principal
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,38}[a-z0-9]$")
@@ -38,6 +39,7 @@ class Subnet:
     cidr: str
     gateway: str
     egress: bool = False  # outbound policy: False = no route to the outside world
+    egress_allow: list[str] = field(default_factory=list)  # with egress: only these destinations (empty = any)
     allocations: dict[str, str] = field(default_factory=dict)  # ip -> resource id
 
 
@@ -84,11 +86,18 @@ class NetworkService:
                           resource_type="network", resource_id=obj.id, correlation_id=cid, metadata={"cidr": str(net)})
         return obj
 
-    def create_subnet(self, p: Principal, network_id: str, name: str, cidr: str, cid="", egress: bool = False) -> Subnet:
+    def create_subnet(self, p: Principal, network_id: str, name: str, cidr: str, cid="", egress: bool = False,
+                      egress_allow: list[str] | None = None) -> Subnet:
         self.iam.require(p, "network:write", "subnet", "-", cid)
         net = self._net(p, network_id)
         if not NAME_RE.match(name or ""):
             raise InvalidInput("invalid subnet name")
+        try:
+            allow = validate_egress_allow(egress_allow or [])
+        except ValueError as e:
+            raise InvalidInput(str(e)) from None
+        if allow and not egress:
+            raise InvalidInput("egress_allow needs egress to be enabled")
         sub = parse_private_cidr(cidr)
         if not sub.subnet_of(ipaddress.IPv4Network(net.cidr)):
             raise InvalidInput("subnet must lie inside its network CIDR")
@@ -99,14 +108,15 @@ class NetworkService:
                 raise Conflict("subnet name already in use")
             if sub.overlaps(ipaddress.IPv4Network(s.cidr)):
                 raise Conflict(f"CIDR overlaps subnet {s.name}")
-        obj = Subnet(str(uuid.uuid4()), net.id, p.organization_id, name, str(sub), str(sub.network_address + 1), bool(egress))
+        obj = Subnet(str(uuid.uuid4()), net.id, p.organization_id, name, str(sub), str(sub.network_address + 1), bool(egress), allow)
         if self.provider:  # real bridge first; nothing is recorded if the host refuses it
-            self.provider.create_subnet(obj.id, obj.cidr, obj.gateway, obj.egress)
+            self.provider.create_subnet(obj.id, obj.cidr, obj.gateway, obj.egress, obj.egress_allow)
         net.subnets[obj.id] = obj
         if self.store:
             self.store.save_subnet(obj)
         self.audit.record(actor_id=p.user_id, organization_id=p.organization_id, action="subnet.create",
-                          resource_type="subnet", resource_id=obj.id, correlation_id=cid, metadata={"cidr": str(sub), "egress": obj.egress})
+                          resource_type="subnet", resource_id=obj.id, correlation_id=cid, metadata={"cidr": str(sub), "egress": obj.egress,
+                                                                                  "egress_allow": allow})
         return obj
 
     def allocate_ip(self, p: Principal, network_id: str, subnet_id: str, resource_id: str, cid="") -> str:

@@ -71,9 +71,9 @@ export function Objects({ me }: { me: Me }) {
 export function Networks({ me }: { me: Me }) {
   const { data, error, loading, reload } = useLoad(() => api<Network[]>("GET", "/api/v1/networks"));
   const [name, setName] = useState(""); const [cidr, setCidr] = useState("10.0.0.0/16"); const [msg, setMsg] = useState("");
-  const [sub, setSub] = useState({ network: "", name: "", cidr: "10.0.1.0/24", egress: false });
+  const [sub, setSub] = useState({ network: "", name: "", cidr: "10.0.1.0/24", egress: false, allow: "" });
   const create = async (e: FormEvent) => { e.preventDefault(); try { await api("POST", "/api/v1/networks", { name, cidr }); setMsg(""); reload(); } catch (x) { setMsg((x as Error).message); } };
-  const createSub = async (e: FormEvent) => { e.preventDefault(); try { await api("POST", `/api/v1/networks/${sub.network}/subnets`, { name: sub.name, cidr: sub.cidr, egress: sub.egress }); setMsg(""); reload(); } catch (x) { setMsg((x as Error).message); } };
+  const createSub = async (e: FormEvent) => { e.preventDefault(); try { await api("POST", `/api/v1/networks/${sub.network}/subnets`, { name: sub.name, cidr: sub.cidr, egress: sub.egress, egress_allow: sub.allow.split(",").map(x => x.trim()).filter(Boolean) }); setMsg(""); reload(); } catch (x) { setMsg((x as Error).message); } };
   const del = async (path: string) => { try { await api("DELETE", path); setMsg(""); reload(); } catch (x) { setMsg((x as Error).message); } };
   return (<Section title="Networks">
     <p className="muted">Each subnet is a real Docker bridge: instances in the same subnet reach each other and other subnets are never reachable. By default a subnet is internal (no internet); "allow outbound" adds NAT egress and enables publishing a port on the host loopback. CIDRs must be unique on the host.</p>
@@ -85,12 +85,13 @@ export function Networks({ me }: { me: Me }) {
         <option value="">Parent network…</option>{data?.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}</select>
       <input aria-label="subnet name" placeholder="subnet name" value={sub.name} onChange={e => setSub({ ...sub, name: e.target.value })} required />
       <input aria-label="subnet cidr" value={sub.cidr} onChange={e => setSub({ ...sub, cidr: e.target.value })} required /><label className="muted"><input type="checkbox" aria-label="allow egress" checked={sub.egress} onChange={e => setSub({ ...sub, egress: e.target.checked })} /> allow outbound</label>
+      {sub.egress && <input aria-label="allowed destinations" placeholder="allowed destination CIDRs, comma separated (empty = any)" value={sub.allow} onChange={e => setSub({ ...sub, allow: e.target.value })} />}
       <button>Add subnet</button></form>}
     {msg && <p className="error" role="alert">{msg}</p>}
     <State loading={loading} error={error} empty={data?.length === 0} />
     {data?.map(n => <div key={n.id}><h3>{n.name} <code>{n.cidr}</code>
       {can(me, "owner", "admin") && <button className="danger" onClick={() => del(`/api/v1/networks/${n.id}`)}>Delete</button>}</h3>
-      <ul>{n.subnets.map(s => <li key={s.id}>{s.name} <code>{s.cidr}</code> gw {s.gateway} · {s.egress ? "outbound allowed" : "internal"} · {s.allocated} allocated
+      <ul>{n.subnets.map(s => <li key={s.id}>{s.name} <code>{s.cidr}</code> gw {s.gateway} · {s.egress ? (s.egress_allow.length ? `outbound only to ${s.egress_allow.join(", ")}` : "outbound allowed") : "internal"} · {s.allocated} allocated
         {can(me, "owner", "admin") && <button className="danger" onClick={() => del(`/api/v1/networks/${n.id}/subnets/${s.id}`)}>Delete</button>}</li>)}</ul></div>)}
   </Section>);
 }

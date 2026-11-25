@@ -226,3 +226,14 @@ def test_published_port_is_unique_and_freed_on_delete(net_env):
     svc.request_action(owner, a.id, "delete", "k3", confirm_name="web-01"); worker.run_once()
     assert svc.repo.get(owner.organization_id, a.id).published_port is None
     svc.create_instance(owner, "web-02", "nginx-small", "k4", network_id=n.id, subnet_id=e.id, published_port=20002)
+
+
+def test_egress_allowlist_is_validated_and_forwarded(net_env):
+    _, _, prov, net, owner, n, _ = net_env
+    s = net.create_subnet(owner, n.id, "sub-allow", "10.0.2.0/29", egress=True, egress_allow=["1.1.1.1/32", "1.1.1.1/32"])
+    assert prov.allow[s.id] == ["1.1.1.1/32"]  # normalised and de-duplicated
+    with pytest.raises(InvalidInput):
+        net.create_subnet(owner, n.id, "sub-x", "10.0.3.0/29", egress=False, egress_allow=["1.1.1.1/32"])
+    for bad in (["127.0.0.1/32"], ["169.254.169.254/32"], ["0.0.0.0/0"], ["nope"], ["1.1.1.0/24"] * 17):
+        with pytest.raises(InvalidInput):
+            net.create_subnet(owner, n.id, "sub-y", "10.0.4.0/29", egress=True, egress_allow=bad)
