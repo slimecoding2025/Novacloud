@@ -84,6 +84,22 @@ services:
     ports: ["127.0.0.1:3001:3000"]
     networks: [backend]
 
+  # Optional: `docker compose --profile proxy up -d proxy`. Host networking is needed to reach the loopback-published
+  # instance ports; it exposes ONLY what deploy/proxy/Caddyfile proxies. Not started by default.
+  proxy:
+    profiles: ["proxy"]
+    image: caddy:2.8-alpine
+    network_mode: host
+    environment:
+      PROXY_SITE: ${PROXY_SITE:-http://:8081}
+      PROXY_UPSTREAM: ${PROXY_UPSTREAM:-127.0.0.1:20080}
+    volumes: ["./deploy/proxy/Caddyfile:/etc/caddy/Caddyfile:ro"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/data", "/config"]
+
 networks:
   backend: {}
   runner: { internal: true }   # runner is reachable only from api/worker and has no outbound network

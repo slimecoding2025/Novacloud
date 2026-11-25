@@ -103,6 +103,10 @@ wait_state "$PUB" running
 for _ in $(seq 1 15); do curl -fsS http://127.0.0.1:20080 2>/dev/null | grep -qi nginx && break; sleep 2; done
 curl -fsS http://127.0.0.1:20080 | grep -qi nginx || fail "published port not reachable on loopback"
 [ "$(docker inspect -f '{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostIp}}' "novacloud-$PUB")" = 127.0.0.1 ] || fail "port not bound to loopback only"
+docker compose --profile proxy up -d proxy >/dev/null 2>&1 || fail "optional proxy profile did not start"
+for _ in $(seq 1 15); do curl -fsS http://127.0.0.1:8081 2>/dev/null | grep -qi nginx && break; sleep 2; done
+curl -fsS http://127.0.0.1:8081 | grep -qi nginx || fail "reverse proxy does not forward to the published port"
+docker compose --profile proxy rm -sf proxy >/dev/null 2>&1
 [ "$(mkp pub-dup "$SE" 20080)" = 409 ] || fail "a host port already in use must be refused with 409"
 req -X DELETE "$API/api/v1/instances/$PUB?confirm_name=pub-e2e" -H "Idempotency-Key: e2e-del-pub" >/dev/null
 wait_state "$PUB" deleted
